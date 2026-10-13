@@ -19,10 +19,12 @@ import {
 } from "./optimization/optimizer.js";
 import { defaultMatcher } from "./matching/matchingService.js";
 import { createNLParser } from "./services/naturalLanguageService.js";
+import { CatalogBackgroundService } from "./services/catalogJobs.js";
 
 export function createServer(prisma: PrismaClient) {
   const app = express();
   const registry = new ConnectorRegistry(prisma);
+  const catalogJobs = new CatalogBackgroundService(prisma, registry);
   const nlParser = createNLParser();
 
   // Security Headers
@@ -469,25 +471,109 @@ export function createServer(prisma: PrismaClient) {
   // GET /api/platforms
   app.get("/api/platforms", (req: Request, res: Response) => {
     const statuses = SUPPORTED_PLATFORMS.map((pid) => {
-      const conn = registry.get(pid);
+      const conn = registry.getConnectorSafe(pid);
       const isKilled = registry.isKillSwitchActive(pid);
+      const metrics = registry.getMetrics(pid);
+      const mode = registry.getMode(pid);
+
       return {
         id: pid,
         name: PLATFORM_METADATA[pid].name,
-        mode: process.env[`${pid.toUpperCase()}_INTEGRATION_MODE`] || "mock",
+        mode,
         enabled: !isKilled,
-        capabilities: conn.getCapabilities(),
+        capabilities: conn ? conn.getCapabilities() : PLATFORM_METADATA[pid].defaultCapabilities,
         status: isKilled ? "disabled" : "healthy",
         lastChecked: new Date().toISOString(),
-        latencyMs: pid === "blinkit" ? 115 : pid === "zepto" ? 92 : pid === "instamart" ? 135 : 170,
-        errorRate: 0.0,
+        latencyMs: metrics.avgLatencyMs,
+        errorRate: metrics.errorRate,
         notes: [
-          `Running in honest mode (NullCartAdapter active)`,
+          `Active integration mode: ${mode.toUpperCase()}`,
+          `Cart creation: UNSUPPORTED (NullCartAdapter active)`,
           `Kill switch state: ${isKilled ? "ACTIVE (Disabled)" : "Inactive (Enabled)"}`,
+          ...(metrics.circuitBreaker?.state === "OPEN"
+            ? ["Circuit breaker: OPEN (Outbound requests paused)"]
+            : []),
         ],
+        metrics,
       };
     });
     res.json(statuses);
+  });
+
+  // GET /api/connectors/health
+  app.get("/api/connectors/health", async (req: Request, res: Response) => {
+    const jobMetrics = await catalogJobs.runMaintenanceCycle();
+    const connectors = SUPPORTED_PLATFORMS.map((pid) => {
+      const conn = registry.getConnectorSafe(pid);
+      const isKilled = registry.isKillSwitchActive(pid);
+      const metrics = registry.getMetrics(pid);
+      return {
+        platform: pid,
+        name: PLATFORM_METADATA[pid].name,
+        mode: registry.getMode(pid),
+        isKillSwitchActive: isKilled,
+        status: isKilled ? "disabled" : "healthy",
+        metrics,
+        capabilities: conn ? conn.getCapabilities() : null,
+      };
+    });
+
+    res.json({
+      status: "ok",
+      timestamp: new Date().toISOString(),
+      connectors,
+      backgroundJobs: jobMetrics,
+    });
+  });
+
+  // POST /api/admin/platforms/:id/kill-switch
+  app.post("/api/admin/platforms/:id/kill-switch", (req: Request, res: Response) => {
+    const pid = req.params.id as PlatformId;
+    if (!SUPPORTED_PLATFORMS.includes(pid)) {
+      return res.status(404).json({ error: `Platform ${req.params.id} not recognized` });
+    }
+    registry.setKillSwitch(pid, true);
+    res.json({
+      success: true,
+      platform: pid,
+      killSwitchActive: true,
+      message: `Connector for ${pid} disabled immediately by kill switch.`,
+    });
+  });
+
+  // DELETE /api/admin/platforms/:id/kill-switch
+  app.delete("/api/admin/platforms/:id/kill-switch", (req: Request, res: Response) => {
+    const pid = req.params.id as PlatformId;
+    if (!SUPPORTED_PLATFORMS.includes(pid)) {
+      return res.status(404).json({ error: `Platform ${req.params.id} not recognized` });
+    }
+    registry.setKillSwitch(pid, false);
+    res.json({
+      success: true,
+      platform: pid,
+      killSwitchActive: false,
+      message: `Connector for ${pid} re-enabled.`,
+    });
+  });
+
+  // POST /api/admin/platforms/:id/mode
+  app.post("/api/admin/platforms/:id/mode", (req: Request, res: Response) => {
+    const pid = req.params.id as PlatformId;
+    const { mode } = req.body;
+    if (!SUPPORTED_PLATFORMS.includes(pid)) {
+      return res.status(404).json({ error: `Platform ${req.params.id} not recognized` });
+    }
+    const validModes = ["mock", "manual", "partner_feed", "authorized_api", "permitted_page", "links_only"];
+    if (!validModes.includes(mode)) {
+      return res.status(400).json({ error: `Invalid mode '${mode}'. Expected one of: ${validModes.join(", ")}` });
+    }
+    registry.setMode(pid, mode);
+    res.json({
+      success: true,
+      platform: pid,
+      mode,
+      message: `Platform ${pid} integration mode set to '${mode}'.`,
+    });
   });
 
   // POST /api/shopping-handoff
@@ -505,49 +591,71 @@ export function createServer(prisma: PrismaClient) {
       const options = JSON.parse(record.optionsJson);
       const chosenOption = options.find((o: any) => o.strategy === parsed.strategy) || options[0];
 
+      let anyCartCreated = false;
+
       const platformsList = chosenOption
-        ? Object.entries(chosenOption.perPlatform).map(([pid, plan]: [string, any]) => {
-            const platformKey = pid as PlatformId;
-            const meta = PLATFORM_METADATA[platformKey];
+        ? await Promise.all(
+            Object.entries(chosenOption.perPlatform).map(async ([pid, plan]: [string, any]) => {
+              const platformKey = pid as PlatformId;
+              const meta = PLATFORM_METADATA[platformKey];
+              const cartAdapter = registry.getCartAdapter(platformKey);
 
-            const checklistText = [
-              `🛒 ${meta.name} Shopping List (GroqAI Plan: ${chosenOption.title})`,
-              `Estimated Total: ₹${plan.estimatedTotalRupees} (Subtotal ₹${plan.subtotalRupees} + Fees ₹${
-                plan.deliveryFeeRupees + plan.handlingFeeRupees + plan.platformFeeRupees
-              })`,
-              `----------------------------------------`,
-              ...plan.items.map(
-                (it: any, idx: number) =>
-                  `${idx + 1}. [ ] ${it.matchedTitle} (${it.packSize}) x ${it.quantity} - Est ₹${it.totalPriceRupees}`
-              ),
-              `----------------------------------------`,
-              `Open ${meta.name}: ${meta.websiteUrl}`,
-            ].join("\n");
+              // Check if automated cart creation is supported
+              const cartResult = await cartAdapter.createCart({
+                platform: platformKey,
+                locationKey: record.locationId,
+                items: plan.items.map((it: any) => ({
+                  productId: it.id,
+                  query: it.requestedQuery,
+                  matchedTitle: it.matchedTitle,
+                  quantity: it.quantity,
+                  packSize: it.packSize,
+                })),
+              });
 
-            return {
-              platform: platformKey,
-              platformName: meta.name,
-              items: plan.items.map((it: any) => ({
-                title: it.matchedTitle,
-                brand: it.brand,
-                variant: it.variant,
-                quantity: it.quantity,
-                unitPriceRupees: it.unitPriceRupees,
-                totalPriceRupees: it.totalPriceRupees,
-                productUrl: undefined,
-                searchUrl: it.searchUrl || `${meta.searchBaseUrl}${encodeURIComponent(it.matchedTitle)}`,
-                isDeepLink: false,
-              })),
-              subtotalRupees: plan.subtotalRupees,
-              estimatedFeesRupees:
-                plan.deliveryFeeRupees + plan.handlingFeeRupees + plan.platformFeeRupees,
-              hasUnknownFees: plan.hasUnknownFee,
-              estimatedTotalRupees: plan.estimatedTotalRupees,
-              meetsMinimumOrder: plan.meetsMinimumOrder,
-              checklistText,
-              cartReviewUrl: meta.websiteUrl,
-            };
-          })
+              if (cartResult.success) {
+                anyCartCreated = true;
+              }
+
+              const checklistText = [
+                `🛒 ${meta.name} Shopping List (GroqAI Plan: ${chosenOption.title})`,
+                `Estimated Total: ₹${plan.estimatedTotalRupees} (Subtotal ₹${plan.subtotalRupees} + Fees ₹${
+                  plan.deliveryFeeRupees + plan.handlingFeeRupees + plan.platformFeeRupees
+                })`,
+                `----------------------------------------`,
+                ...plan.items.map(
+                  (it: any, idx: number) =>
+                    `${idx + 1}. [ ] ${it.matchedTitle} (${it.packSize}) x ${it.quantity} - Est ₹${it.totalPriceRupees}`
+                ),
+                `----------------------------------------`,
+                `Open ${meta.name}: ${meta.websiteUrl}`,
+              ].join("\n");
+
+              return {
+                platform: platformKey,
+                platformName: meta.name,
+                items: plan.items.map((it: any) => ({
+                  title: it.matchedTitle,
+                  brand: it.brand,
+                  variant: it.variant,
+                  quantity: it.quantity,
+                  unitPriceRupees: it.unitPriceRupees,
+                  totalPriceRupees: it.totalPriceRupees,
+                  productUrl: undefined,
+                  searchUrl: it.searchUrl || `${meta.searchBaseUrl}${encodeURIComponent(it.matchedTitle)}`,
+                  isDeepLink: false,
+                })),
+                subtotalRupees: plan.subtotalRupees,
+                estimatedFeesRupees:
+                  plan.deliveryFeeRupees + plan.handlingFeeRupees + plan.platformFeeRupees,
+                hasUnknownFees: plan.hasUnknownFee,
+                estimatedTotalRupees: plan.estimatedTotalRupees,
+                meetsMinimumOrder: plan.meetsMinimumOrder,
+                checklistText,
+                cartReviewUrl: cartResult.cartReviewUrl || meta.websiteUrl,
+              };
+            })
+          )
         : [];
 
       res.status(200).json({
@@ -555,7 +663,7 @@ export function createServer(prisma: PrismaClient) {
         optimizationId: parsed.optimizationId,
         strategy: parsed.strategy,
         timestamp: new Date().toISOString(),
-        method: "links_and_checklist",
+        method: anyCartCreated ? "automated_cart" : "links_and_checklist",
         isEstimate: true,
         notice:
           "Verify basket, address, fees and total in the app. Payment happens on the platform, not on GroqAI.",

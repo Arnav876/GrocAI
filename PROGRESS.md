@@ -32,17 +32,17 @@
   - [x] Backend test suite (Vitest): optimizer, matching, API integration, property-style total check
   - [x] Connect web to real API via `VITE_API_BASE_URL`
   - [x] **GATE 2:** install, typecheck, lint, build, test, docs/PHASE_2_REPORT.md, git commit `phase-2-backend-complete`
-- [ ] Phase 3: Platform Integration (Validated capabilities only)
-  - [ ] Capability system & platform kill switches
-  - [ ] Fallback hierarchy per platform
-  - [ ] Connector adapters: AuthorizedApiConnector, ManualPriceConnector, LinksChecklistConnector, PlaywrightAssistedConnector, LicensedProviderConnector
-  - [ ] CartAdapter interface & NullCartAdapter
-  - [ ] POST `/api/shopping-handoff` implementation
-  - [ ] Observability: metrics, health checks, stale alerts
-  - [ ] Compliance documentation (`docs/platform-capabilities.md`, `docs/data-sources.md`, `docs/compliance-checklist.md`)
-  - [ ] Frontend enhancements (data source badges, Indicative labels, degraded banners, health dashboard)
-  - [ ] Integration tests (contract tests, mapper fixtures, failure modes, kill switch, handoff)
-  - [ ] **GATE 3:** install, typecheck, lint, build, test, docs/PHASE_3_REPORT.md, git commit `phase-3-platform-integration-complete`
+- [x] Phase 3: Platform Integration (Validated capabilities only)
+  - [x] Capability system & platform kill switches
+  - [x] Fallback hierarchy per platform
+  - [x] Connector adapters: AuthorizedApiConnector, ManualPriceConnector, LinksChecklistConnector, PlaywrightAssistedConnector, LicensedProviderConnector
+  - [x] CartAdapter interface & NullCartAdapter
+  - [x] POST `/api/shopping-handoff` implementation
+  - [x] Observability: metrics, health checks, stale alerts
+  - [x] Compliance documentation (`docs/platform-capabilities.md`, `docs/data-sources.md`, `docs/compliance-checklist.md`)
+  - [x] Frontend enhancements (data source badges, Indicative labels, degraded banners, health dashboard)
+  - [x] Integration tests (contract tests, mapper fixtures, failure modes, kill switch, handoff)
+  - [x] **GATE 3:** install, typecheck, lint, build, test, docs/PHASE_3_REPORT.md, git commit `phase-3-platform-integration-complete`
 - [ ] Final Verification & Deliverables
   - [ ] Final test & build run
   - [ ] `FINAL_REPORT.md`
