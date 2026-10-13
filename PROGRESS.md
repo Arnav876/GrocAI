@@ -19,19 +19,19 @@
   - [x] Platform status & capabilities page
   - [x] Frontend unit tests (formatting, stale prices, unknown fees, strategy rendering)
   - [x] **GATE 1:** install, typecheck, lint, build, test, docs/PHASE_1_REPORT.md, git commit `phase-1-frontend-complete`
-- [ ] Phase 2: Backend (Real API, DB, Matching, Optimizer; mock connectors)
-  - [ ] PostgreSQL Prisma schema with integer paise, indexes, migrations
-  - [ ] Docker Compose for PostgreSQL
-  - [ ] Database seed script with 40 mock fixtures & platform fee rules
-  - [ ] Connector layer skeleton with PlatformConnector interface & MockConnectors
-  - [ ] Deterministic Matching Engine (unit normalization, variant guards, match confidence)
-  - [ ] Pure Optimization Engine (3 strategies, subset enumeration, fee rules, minimum order constraints, baseline savings)
-  - [ ] Natural Language grocery list parser interface
-  - [ ] Express API routes, controllers, Zod validation, error handling, rate limiting, helmet, CORS, structured logging, Swagger/OpenAPI
-  - [ ] Price freshness TTL evaluation
-  - [ ] Backend test suite (Vitest): optimizer, matching, API integration, property-style total check
-  - [ ] Connect web to real API via `VITE_API_BASE_URL`
-  - [ ] **GATE 2:** install, typecheck, lint, build, test, docs/PHASE_2_REPORT.md, git commit `phase-2-backend-complete`
+- [x] Phase 2: Backend (Real API, DB, Matching, Optimizer; mock connectors)
+  - [x] PostgreSQL Prisma schema with integer paise, indexes, migrations
+  - [x] Docker Compose for PostgreSQL
+  - [x] Database seed script with 40 mock fixtures & platform fee rules
+  - [x] Connector layer skeleton with PlatformConnector interface & MockConnectors
+  - [x] Deterministic Matching Engine (unit normalization, variant guards, match confidence)
+  - [x] Pure Optimization Engine (3 strategies, subset enumeration, fee rules, minimum order constraints, baseline savings)
+  - [x] Natural Language grocery list parser interface
+  - [x] Express API routes, controllers, Zod validation, error handling, rate limiting, helmet, CORS, structured logging, Swagger/OpenAPI
+  - [x] Price freshness TTL evaluation
+  - [x] Backend test suite (Vitest): optimizer, matching, API integration, property-style total check
+  - [x] Connect web to real API via `VITE_API_BASE_URL`
+  - [x] **GATE 2:** install, typecheck, lint, build, test, docs/PHASE_2_REPORT.md, git commit `phase-2-backend-complete`
 - [ ] Phase 3: Platform Integration (Validated capabilities only)
   - [ ] Capability system & platform kill switches
   - [ ] Fallback hierarchy per platform

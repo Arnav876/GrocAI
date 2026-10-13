@@ -1,0 +1,152 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  slug      String    @unique
+  name      String
+  icon      String
+  bgPastel  String
+  itemCount Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  products  Product[]
+
+  @@index([slug])
+}
+
+model Product {
+  id                 String             @id
+  name               String
+  brand              String
+  categoryId         String
+  category           Category           @relation(fields: [categoryId], references: [id])
+  variant            String
+  packSize           String
+  mrpPaise           Int?
+  rating             Float?             @default(4.5)
+  reviewCount        Int?               @default(100)
+  discountPercentage Int?               @default(0)
+  isOutOfStock       Boolean            @default(false)
+  isNew              Boolean            @default(false)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  listings           PlatformListing[]
+  observations       PriceObservation[]
+
+  @@index([brand])
+  @@index([categoryId])
+  @@index([name])
+}
+
+model PlatformListing {
+  id               String   @id @default(cuid())
+  productId        String
+  product          Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  platform         String   // blinkit, zepto, instamart, bigbasket
+  externalId       String?
+  productUrl       String?
+  searchUrl        String?
+  currentPricePaise Int?    // integer paise, null when unknown or unavailable
+  availability     String   @default("available") // available, unavailable, unknown
+  isStale          Boolean  @default(false)
+  confidence       Float    @default(1.0)
+  sourceType       String   @default("mock")
+  lastObservedAt   DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([productId, platform])
+  @@index([platform, availability])
+}
+
+model PriceObservation {
+  id          String   @id @default(cuid())
+  productId   String?
+  product     Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  platform    String   // blinkit, zepto, instamart, bigbasket
+  rawTitle    String
+  pricePaise  Int?     // integer paise, null when unknown or unavailable
+  currency    String   @default("INR")
+  availability String  @default("available")
+  locationKey String   @default("delhi_110001")
+  sourceType  String   @default("mock")
+  confidence  Float    @default(1.0)
+  observedAt  DateTime @default(now())
+  notes       String[] @default([])
+  createdAt   DateTime @default(now())
+
+  @@index([platform, observedAt])
+  @@index([productId, platform])
+}
+
+model PlatformFeeRule {
+  id                         String   @id @default(cuid())
+  platform                   String   // blinkit, zepto, instamart, bigbasket
+  locationKey                String   @default("delhi_110001")
+  deliveryFeePaise           Int?     // null when unknown
+  handlingFeePaise           Int?     // null when unknown
+  handlingFeeRangeMinPaise   Int?
+  handlingFeeRangeMaxPaise   Int?
+  platformFeePaise           Int?     // null when unknown
+  freeDeliveryThresholdPaise Int?
+  minimumOrderValuePaise     Int?
+  sourceType                 String   @default("mock")
+  observedAt                 DateTime @default(now())
+  notes                      String[] @default([])
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  @@unique([platform, locationKey])
+  @@index([platform, locationKey])
+}
+
+model GroceryList {
+  id            String            @id @default(cuid())
+  locationId    String            @default("delhi_110001")
+  pincode       String            @default("110001")
+  budgetPaise   Int?
+  strategy      String?           @default("optimized_multi_platform")
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  items         GroceryListItem[]
+  optimizations OptimizationResult[]
+
+  @@index([pincode])
+}
+
+model GroceryListItem {
+  id                 String      @id @default(cuid())
+  listId             String
+  list               GroceryList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  query              String
+  quantity           Float       @default(1)
+  unit               String      @default("pcs")
+  requiredVariant    String?
+  allowSubstitutions Boolean     @default(false)
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  @@index([listId])
+}
+
+model OptimizationResult {
+  id                 String       @id
+  listId             String?
+  list               GroceryList? @relation(fields: [listId], references: [id], onDelete: SetNull)
+  locationId         String       @default("delhi_110001")
+  pincode            String       @default("110001")
+  baselineName       String
+  baselineTotalPaise Int
+  optionsJson        String       // JSON-serialized array of OptimizationOption
+  warnings           String[]     @default([])
+  createdAt          DateTime     @default(now())
+
+  @@index([locationId, createdAt])
+}
