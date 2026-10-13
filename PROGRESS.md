@@ -1,0 +1,49 @@
+# GroqAI Implementation Progress
+
+## Overall Protocol Status
+- [x] Phase 1: Frontend (against mock API)
+  - [x] Monorepo setup (workspaces: `packages/shared`, `apps/web`, `apps/api`)
+  - [x] Shared types & Zod schemas (`packages/shared`)
+  - [x] Rich Nest Mart & Grocery style UI with Tailwind CSS tokens and Quicksand typography
+  - [x] 40 grocery item mock fixtures covering tricky edge cases
+  - [x] Mock API service implementing the full REST contract
+  - [x] Home page (Utility bar, Header, Nav row, Hero carousel, Categories, Promo banners, Popular products grid, Top savings, How it works, Footer)
+  - [x] Pincode / Location selector
+  - [x] Search & Category browse page with filters
+  - [x] 4-Platform Product Comparison matrix view
+  - [x] Grocery List builder (manual rows + Natural Language parser)
+  - [x] User Preferences panel (budget, max platforms, min savings)
+  - [x] Optimization Results view (3 strategies, fees breakdown, named baseline savings, unknown fee badge)
+  - [x] Substitution modal & diff confirmation
+  - [x] Handoff / Checkout preparation screen (checklist, deep links, legal notice)
+  - [x] Platform status & capabilities page
+  - [x] Frontend unit tests (formatting, stale prices, unknown fees, strategy rendering)
+  - [x] **GATE 1:** install, typecheck, lint, build, test, docs/PHASE_1_REPORT.md, git commit `phase-1-frontend-complete`
+- [ ] Phase 2: Backend (Real API, DB, Matching, Optimizer; mock connectors)
+  - [ ] PostgreSQL Prisma schema with integer paise, indexes, migrations
+  - [ ] Docker Compose for PostgreSQL
+  - [ ] Database seed script with 40 mock fixtures & platform fee rules
+  - [ ] Connector layer skeleton with PlatformConnector interface & MockConnectors
+  - [ ] Deterministic Matching Engine (unit normalization, variant guards, match confidence)
+  - [ ] Pure Optimization Engine (3 strategies, subset enumeration, fee rules, minimum order constraints, baseline savings)
+  - [ ] Natural Language grocery list parser interface
+  - [ ] Express API routes, controllers, Zod validation, error handling, rate limiting, helmet, CORS, structured logging, Swagger/OpenAPI
+  - [ ] Price freshness TTL evaluation
+  - [ ] Backend test suite (Vitest): optimizer, matching, API integration, property-style total check
+  - [ ] Connect web to real API via `VITE_API_BASE_URL`
+  - [ ] **GATE 2:** install, typecheck, lint, build, test, docs/PHASE_2_REPORT.md, git commit `phase-2-backend-complete`
+- [ ] Phase 3: Platform Integration (Validated capabilities only)
+  - [ ] Capability system & platform kill switches
+  - [ ] Fallback hierarchy per platform
+  - [ ] Connector adapters: AuthorizedApiConnector, ManualPriceConnector, LinksChecklistConnector, PlaywrightAssistedConnector, LicensedProviderConnector
+  - [ ] CartAdapter interface & NullCartAdapter
+  - [ ] POST `/api/shopping-handoff` implementation
+  - [ ] Observability: metrics, health checks, stale alerts
+  - [ ] Compliance documentation (`docs/platform-capabilities.md`, `docs/data-sources.md`, `docs/compliance-checklist.md`)
+  - [ ] Frontend enhancements (data source badges, Indicative labels, degraded banners, health dashboard)
+  - [ ] Integration tests (contract tests, mapper fixtures, failure modes, kill switch, handoff)
+  - [ ] **GATE 3:** install, typecheck, lint, build, test, docs/PHASE_3_REPORT.md, git commit `phase-3-platform-integration-complete`
+- [ ] Final Verification & Deliverables
+  - [ ] Final test & build run
+  - [ ] `FINAL_REPORT.md`
+  - [ ] `README.md`

@@ -1,0 +1,53 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply font-quicksand bg-white text-brand-navy antialiased selection:bg-brand-green-light selection:text-brand-navy;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-bold text-brand-navy tracking-tight;
+  }
+}
+
+/* Custom background pattern for hero section */
+.bg-doodle-pattern {
+  background-color: #DEF9EC;
+  background-image: radial-gradient(#3BB77E 0.75px, transparent 0.75px), radial-gradient(#3BB77E 0.75px, #DEF9EC 0.75px);
+  background-size: 30px 30px;
+  background-position: 0 0, 15px 15px;
+  background-opacity: 0.15;
+}
+
+/* Card hover animation */
+.grocery-card {
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s ease;
+}
+
+.grocery-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
+  border-color: #BCE3C9;
+}
+
+/* Category item hover */
+.category-card {
+  transition: all 0.2s ease-in-out;
+}
+
+.category-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.06);
+  border-color: #3BB77E;
+}
+
+/* Custom scrollbar for horizontal categories */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
