@@ -135,7 +135,7 @@ export class MatchingService {
     const tokenConfidence =
       queryTokens.length > 0 ? intersection.length / Math.max(queryTokens.length, candidateTokens.length) : 0;
 
-    let confidence = Math.min(1.0, 0.4 + tokenConfidence * 0.6);
+    let confidence = tokenConfidence > 0 ? Math.min(1.0, 0.4 + tokenConfidence * 0.6) : 0.0;
 
     // If all significant query tokens are matched in candidate
     if (queryTokens.length > 0 && queryTokens.every((t) => candidateTokens.includes(t))) {

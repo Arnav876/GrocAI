@@ -11,7 +11,9 @@
     "test": "vitest run",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "worker": "tsx src/ingestion/worker.ts",
+    "worker:once": "tsx src/ingestion/worker.ts --once"
   },
   "dependencies": {
     "@groqai/shared": "*",

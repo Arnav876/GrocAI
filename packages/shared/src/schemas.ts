@@ -40,12 +40,14 @@ export const NormalizedUnitPriceSchema = z.object({
 export const PriceObservationSchema = z.object({
   platform: PlatformIdSchema,
   productId: z.string().optional(),
+  externalId: z.string().optional(),
   productUrl: z.string().optional(),
   imageUrl: z.string().optional(),
   searchUrl: z.string().optional(),
   title: z.string().min(1),
   brand: z.string().optional(),
   variant: z.string().optional(),
+  packSize: z.string().optional(),
   quantity: z.number().positive().optional(),
   unit: z.string().optional(),
   price: z.number().nonnegative().optional(), // In INR rupees at contract boundary
@@ -56,13 +58,68 @@ export const PriceObservationSchema = z.object({
   currency: z.literal("INR"),
   availability: AvailabilityStatusSchema.optional(),
   locationKey: z.string().optional(),
+  pincode: z.string().optional(),
   serviceableArea: z.string().optional(),
+  latitude: z.number().optional(),
+  longitude: z.number().optional(),
   sourceType: SourceTypeSchema,
   verificationStatus: PriceVerificationStatusSchema.optional(),
   observedAt: z.string(),
+  fetchedAt: z.string().optional(),
+  scrapeRunId: z.string().optional(),
   confidence: z.number().min(0).max(1),
   normalizedUnitPrice: NormalizedUnitPriceSchema.optional(),
+  normalizedUnitPricePaise: z.number().int().optional(),
+  normalizedUnit: z.string().optional(),
   notes: z.array(z.string()).optional(),
+});
+
+export const LocationContextSchema = z.object({
+  locationKey: z.string(),
+  pincode: z.string(),
+  city: z.string(),
+  latitude: z.number(),
+  longitude: z.number(),
+  serviceableArea: z.string().optional(),
+});
+
+export const ScrapeTriggerSchema = z.enum(["scheduled", "on_demand", "refresh", "manual"]);
+export const ScrapeRunStatusSchema = z.enum(["pending", "running", "completed", "failed", "blocked"]);
+
+export const ScrapeRunSchema = z.object({
+  id: z.string(),
+  platform: PlatformIdSchema,
+  locationKey: z.string(),
+  trigger: ScrapeTriggerSchema,
+  status: ScrapeRunStatusSchema,
+  queries: z.array(z.string()),
+  itemsFound: z.number().int(),
+  error: z.string().optional(),
+  startedAt: z.string(),
+  finishedAt: z.string().optional(),
+});
+
+export const RawObservationSchema = z.object({
+  platform: PlatformIdSchema,
+  externalId: z.string().optional(),
+  title: z.string().min(1),
+  brand: z.string().optional(),
+  variant: z.string().optional(),
+  packSize: z.string().optional(),
+  quantity: z.number().optional(),
+  unit: z.string().optional(),
+  pricePaise: z.number().int().nonnegative().optional(),
+  originalPricePaise: z.number().int().nonnegative().optional(),
+  discountPercentage: z.number().nonnegative().optional(),
+  availability: AvailabilityStatusSchema.optional(),
+  productUrl: z.string().optional(),
+  imageUrl: z.string().optional(),
+  searchUrl: z.string().optional(),
+  pincode: z.string().optional(),
+  serviceableArea: z.string().optional(),
+  latitude: z.number().optional(),
+  longitude: z.number().optional(),
+  rawPayload: z.unknown().optional(),
 });
 
 export const GroceryListItemInputSchema = z.object({

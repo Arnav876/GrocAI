@@ -171,6 +171,73 @@ export class GroqApiClient {
     const data = await res.json();
     return ShoppingHandoffResponseSchema.parse(data);
   }
+
+  async enqueueRefresh(
+    queries: string[],
+    platforms: string[] = ["blinkit", "zepto", "bigbasket"],
+    locationKey: string = "delhi_110001"
+  ): Promise<{ status: string; jobId: string; jobIds: string[]; message: string }> {
+    if (this.isUsingMock()) {
+      return { status: "queued", jobId: "mock-job-1", jobIds: ["mock-job-1"], message: "Mock ingestion job" };
+    }
+    const res = await fetch(`${API_BASE_URL}/api/ingestion/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ queries, platforms, locationKey }),
+    });
+    if (!res.ok) throw new Error(`Refresh enqueue failed: ${res.statusText}`);
+    return res.json();
+  }
+
+  async getIngestionJob(jobId: string): Promise<any> {
+    if (this.isUsingMock()) {
+      return { id: jobId, status: "completed", itemsFound: 5 };
+    }
+    const res = await fetch(`${API_BASE_URL}/api/ingestion/jobs/${encodeURIComponent(jobId)}`);
+    if (!res.ok) throw new Error(`Failed to get ingestion job: ${res.statusText}`);
+    return res.json();
+  }
+
+  async getIngestionStatus(): Promise<{
+    queueDepth: { queued: number; running: number; completed: number; failed: number; blocked: number };
+    lastRunByPlatform: Record<string, any>;
+    blockedPlatforms: string[];
+  }> {
+    if (this.isUsingMock()) {
+      return {
+        queueDepth: { queued: 0, running: 0, completed: 0, failed: 0, blocked: 0 },
+        lastRunByPlatform: {},
+        blockedPlatforms: ["instamart"],
+      };
+    }
+    const res = await fetch(`${API_BASE_URL}/api/ingestion/status`);
+    if (!res.ok) throw new Error(`Failed to get ingestion status: ${res.statusText}`);
+    return res.json();
+  }
+
+  async submitManualObservation(data: {
+    platform?: string;
+    title: string;
+    priceRupees?: number;
+    pricePaise?: number;
+    packSize?: string;
+    pincode?: string;
+    productUrl?: string;
+  }): Promise<any> {
+    if (this.isUsingMock()) {
+      return { message: "Manual observation saved (mock)" };
+    }
+    const res = await fetch(`${API_BASE_URL}/api/observations/manual`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to submit manual price: ${res.statusText}`);
+    }
+    return res.json();
+  }
 }
 
 export const apiClient = new GroqApiClient();

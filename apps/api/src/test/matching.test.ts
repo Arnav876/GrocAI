@@ -97,5 +97,49 @@ describe("Matching Service & Unit Normalization", () => {
       // Conflicting brown vs white variant triggers rejection
       expect(res.isMatch).toBe(false);
     });
+
+    it("regression: a query for 'Amul Gold' never matches 'Amul Taaza'", () => {
+      const res = matcher.match(
+        { query: "Amul Gold" },
+        {
+          id: "p-taaza",
+          name: "Amul Taaza Toned Fresh Milk",
+          brand: "Amul",
+          variant: "Toned Milk",
+          packSize: "1 L",
+        }
+      );
+      expect(res.isMatch).toBe(false);
+    });
+
+    it("regression: a query for '5 kg atta' never matches '1 kg atta'", () => {
+      const res = matcher.match(
+        { query: "Aashirvaad Shudh Chakki Atta 5 kg", packSize: "5 kg" },
+        {
+          id: "p-atta-1kg",
+          name: "Aashirvaad Shudh Chakki Atta",
+          brand: "Aashirvaad",
+          variant: "Whole Wheat",
+          packSize: "1 kg",
+        }
+      );
+      expect(res.isMatch).toBe(false);
+      expect(res.confidence).toBe(0.0);
+    });
+
+    it("regression: completely unrelated query never matches and is not substituted", () => {
+      const res = matcher.match(
+        { query: "Apple iPhone 16 Pro Max" },
+        {
+          id: "p-onion",
+          name: "Fresh Hybrid Red Onions",
+          brand: "Farm Fresh",
+          variant: "Red Onions",
+          packSize: "1 kg",
+        }
+      );
+      expect(res.isMatch).toBe(false);
+      expect(res.confidence).toBe(0.0);
+    });
   });
 });

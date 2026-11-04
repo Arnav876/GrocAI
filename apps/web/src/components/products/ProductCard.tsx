@@ -135,19 +135,23 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
               {product.platformPrices[product.lowestPlatform]?.verificationStatus === "live_verified" ? (
                 <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-200 flex items-center gap-0.5">
                   <span className="w-1 h-1 rounded-full bg-emerald-600 animate-pulse"></span>
-                  LIVE
+                  LIVE VERIFIED
                 </span>
-              ) : product.platformPrices[product.lowestPlatform]?.verificationStatus === "cached" ? (
-                <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-sky-100 text-sky-800 font-bold border border-sky-200">
-                  CACHED
+              ) : product.platformPrices[product.lowestPlatform]?.sourceType === "manual" ? (
+                <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-purple-100 text-purple-800 font-bold border border-purple-200">
+                  MANUAL
                 </span>
               ) : product.platformPrices[product.lowestPlatform]?.isStale ? (
                 <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-800 font-bold border border-amber-200">
                   STALE
                 </span>
+              ) : product.platformPrices[product.lowestPlatform]?.verificationStatus === "cached" ? (
+                <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-sky-100 text-sky-800 font-bold border border-sky-200">
+                  CACHED
+                </span>
               ) : (
                 <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-gray-100 text-gray-700 font-semibold border border-gray-200">
-                  {product.platformPrices[product.lowestPlatform]?.sourceType?.toUpperCase() || "MOCK"}
+                  MOCK ESTIMATE
                 </span>
               )}
             </div>

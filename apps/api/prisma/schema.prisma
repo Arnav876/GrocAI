@@ -67,23 +67,100 @@ model PlatformListing {
 }
 
 model PriceObservation {
-  id          String   @id @default(cuid())
-  productId   String?
-  product     Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
-  platform    String   // blinkit, zepto, instamart, bigbasket
-  rawTitle    String
-  pricePaise  Int?     // integer paise, null when unknown or unavailable
-  currency    String   @default("INR")
-  availability String  @default("available")
-  locationKey String   @default("delhi_110001")
-  sourceType  String   @default("mock")
-  confidence  Float    @default(1.0)
-  observedAt  DateTime @default(now())
-  notes       String[] @default([])
-  createdAt   DateTime @default(now())
+  id                       String     @id @default(cuid())
+  productId                String?
+  product                  Product?   @relation(fields: [productId], references: [id], onDelete: SetNull)
+  platform                 String     // blinkit, zepto, instamart, bigbasket
+  externalId               String?
+  rawTitle                 String
+  brand                    String?
+  variant                  String?
+  packSize                 String?
+  quantity                 Float?
+  unit                     String?
+  pricePaise               Int?       // integer paise, null when unknown or unavailable
+  originalPricePaise       Int?
+  discountPercentage       Int?
+  currency                 String     @default("INR")
+  availability             String     @default("available")
+  productUrl               String?
+  imageUrl                 String?
+  searchUrl                String?
+  locationKey              String     @default("delhi_110001")
+  pincode                  String?
+  serviceableArea          String?
+  latitude                 Float?
+  longitude                Float?
+  normalizedUnitPricePaise Int?
+  normalizedUnit           String?
+  sourceType               String     @default("mock")
+  verificationStatus       String?    @default("estimate")
+  confidence               Float      @default(1.0)
+  observedAt               DateTime   @default(now())
+  fetchedAt                DateTime?
+  scrapeRunId              String?
+  scrapeRun                ScrapeRun? @relation(fields: [scrapeRunId], references: [id], onDelete: SetNull)
+  notes                    String[]   @default([])
+  createdAt                DateTime   @default(now())
 
   @@index([platform, observedAt])
   @@index([productId, platform])
+  @@index([scrapeRunId])
+}
+
+model ScrapeRun {
+  id           String             @id @default(cuid())
+  platform     String             // blinkit, zepto, instamart, bigbasket
+  locationKey  String             @default("delhi_110001")
+  trigger      String             @default("manual") // scheduled, on_demand, refresh, manual
+  status       String             @default("pending") // pending, running, completed, failed, blocked
+  queries      String[]           @default([])
+  itemsFound   Int                @default(0)
+  error        String?
+  startedAt    DateTime           @default(now())
+  finishedAt   DateTime?
+  observations PriceObservation[]
+  jobs         ScrapeJob[]
+
+  @@index([platform, status])
+  @@index([startedAt])
+}
+
+model ScrapeJob {
+  id           String     @id @default(cuid())
+  platform     String     // blinkit, zepto, instamart, bigbasket
+  queries      String[]   @default([])
+  locationKey  String     @default("delhi_110001")
+  priority     Int        @default(0)
+  status       String     @default("queued") // queued, running, completed, failed, blocked
+  attempts     Int        @default(0)
+  maxAttempts  Int        @default(3)
+  error        String?
+  scrapeRunId  String?
+  scrapeRun    ScrapeRun? @relation(fields: [scrapeRunId], references: [id], onDelete: SetNull)
+  scheduledFor DateTime   @default(now())
+  lockedAt     DateTime?
+  lockedBy     String?
+  completedAt  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([status, scheduledFor, priority])
+}
+
+model Location {
+  id              String   @id @default(cuid())
+  locationKey     String   @unique // e.g. "delhi_110001"
+  pincode         String
+  city            String
+  latitude        Float
+  longitude       Float
+  serviceableArea String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([pincode])
+  @@index([locationKey])
 }
 
 model PlatformFeeRule {

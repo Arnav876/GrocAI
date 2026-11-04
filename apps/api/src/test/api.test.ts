@@ -83,6 +83,28 @@ describe("API Endpoint Integration Tests", () => {
     expect(Array.isArray(handoffRes.body.platforms)).toBe(true);
   });
 
+  it("POST /api/optimizations excludes unmatched items and warns instead of substituting allProducts[0]", async () => {
+    const payload = {
+      locationId: "delhi_110001",
+      pincode: "110001",
+      items: [
+        { query: "Amul Taaza Milk", quantity: 1, unit: "L" },
+        { query: "Completely Unmatched XYZ Random Tech Gadget", quantity: 1, unit: "pcs" },
+      ],
+    };
+
+    const res = await request(app).post("/api/optimizations").send(payload);
+    expect(res.status).toBe(201);
+    expect(res.body.warnings.some((w: string) => w.includes("could not be matched in catalog"))).toBe(true);
+    // Verified: Only 1 item matched and optimized (no fake substitution)
+    const option = res.body.options[0];
+    const totalLines = Object.values(option.perPlatform).reduce(
+      (sum: number, p: any) => sum + p.items.length,
+      0
+    );
+    expect(totalLines).toBe(1);
+  });
+
   it("GET /api/platforms returns honest capabilities without simulating fake cart creation", async () => {
     const res = await request(app).get("/api/platforms");
     expect(res.status).toBe(200);

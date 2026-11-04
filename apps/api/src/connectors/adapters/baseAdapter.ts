@@ -161,6 +161,7 @@ export abstract class BaseGroceryPlatformAdapter implements IGroceryPlatformAdap
       title: raw.title,
       brand: raw.brand,
       variant: raw.variant,
+      packSize: raw.packSize || raw.unit,
       quantity: raw.quantity || 1,
       unit: raw.unit,
       price: priceRupees,

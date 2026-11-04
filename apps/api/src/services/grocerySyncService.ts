@@ -138,13 +138,55 @@ export class GrocerySyncService {
           const duration = Date.now() - start;
           this.registry.recordRequest(pid, true, duration);
 
-          // Find best matching observation
-          let matchedObs: PriceObservation | null = null;
-          if (observations.length > 0) {
-            matchedObs = observations[0];
+          // Find best matching observation using deterministic matcher
+          const scored = observations
+            .map((o) => ({
+              o,
+              m: defaultMatcher.match(
+                { query: prod.name, variant: prod.variant, packSize: prod.packSize },
+                {
+                  id: o.productId ?? "",
+                  name: o.title,
+                  brand: o.brand ?? "",
+                  variant: o.variant ?? "",
+                  packSize: o.packSize || o.unit || "",
+                }
+              ),
+            }))
+            .filter((x) => x.m.isMatch)
+            .sort((a, b) => b.m.confidence - a.m.confidence);
+
+          let matchedObs: PriceObservation | null = scored.length > 0 ? scored[0].o : null;
+          const matchConfidence = scored.length > 0 ? scored[0].m.confidence : 0;
+          const obsPricePaise =
+            matchedObs?.pricePaise !== undefined
+              ? matchedObs.pricePaise
+              : matchedObs?.price !== undefined
+              ? Math.round(matchedObs.price * 100)
+              : undefined;
+
+          if (!matchedObs || obsPricePaise === undefined) {
+            // Preserve existing listing if any, mark unmatched, do not write a random price
+            outcomes[pid] = {
+              platform: pid,
+              status: existingListing ? "cached" : "failed",
+              verificationStatus: existingListing ? "cached" : "unavailable",
+              pricePaise: existingListing?.currentPricePaise || null,
+              availability: existingListing?.availability || "unavailable",
+              observedAt: existingListing?.lastObservedAt?.toISOString() || new Date().toISOString(),
+              sourceType: (existingListing?.sourceType as SourceType) || "mock",
+              error: `No compatible product match found on ${pid}`,
+            };
+            if (existingListing) cachedPlatforms.push(pid);
+            else failedPlatforms.push(pid);
+            return;
           }
 
-          if (matchedObs && matchedObs.pricePaise !== undefined) {
+          if (matchedObs && obsPricePaise !== undefined) {
+            // Only clear isStale when sourceType is permitted_page, authorized_api, or partner_feed
+            const isLiveSource = ["permitted_page", "authorized_api", "partner_feed"].includes(matchedObs.sourceType);
+            const isStale = !isLiveSource;
+
             // Update PlatformListing in DB with verified observation
             const newObservedAt = new Date(matchedObs.observedAt || Date.now());
             await this.prisma.platformListing.upsert({
@@ -152,20 +194,20 @@ export class GrocerySyncService {
               create: {
                 productId: prod.id,
                 platform: pid,
-                currentPricePaise: matchedObs.pricePaise,
+                currentPricePaise: obsPricePaise,
                 availability: matchedObs.availability || "available",
-                isStale: false,
-                confidence: matchedObs.confidence ?? 1.0,
+                isStale,
+                confidence: matchConfidence > 0 ? matchConfidence : (matchedObs.confidence ?? 1.0),
                 sourceType: matchedObs.sourceType,
                 lastObservedAt: newObservedAt,
                 productUrl: matchedObs.productUrl,
                 searchUrl: matchedObs.searchUrl,
               },
               update: {
-                currentPricePaise: matchedObs.pricePaise,
+                currentPricePaise: obsPricePaise,
                 availability: matchedObs.availability || "available",
-                isStale: false,
-                confidence: matchedObs.confidence ?? 1.0,
+                isStale,
+                confidence: matchConfidence > 0 ? matchConfidence : (matchedObs.confidence ?? 1.0),
                 sourceType: matchedObs.sourceType,
                 lastObservedAt: newObservedAt,
               },
@@ -177,7 +219,7 @@ export class GrocerySyncService {
                 productId: prod.id,
                 platform: pid,
                 rawTitle: matchedObs.title,
-                pricePaise: matchedObs.pricePaise,
+                pricePaise: obsPricePaise,
                 availability: matchedObs.availability || "available",
                 locationKey,
                 sourceType: matchedObs.sourceType,
@@ -197,7 +239,7 @@ export class GrocerySyncService {
               platform: pid,
               status: "success",
               verificationStatus,
-              pricePaise: matchedObs.pricePaise,
+              pricePaise: obsPricePaise,
               availability: matchedObs.availability || "available",
               observedAt: matchedObs.observedAt,
               sourceType: matchedObs.sourceType,
@@ -297,7 +339,7 @@ export class GrocerySyncService {
     const results: ProductSyncResult[] = [];
 
     for (const item of items) {
-      let bestProd = allProds[0];
+      let bestProd: any = null;
       let highestConfidence = -1;
 
       for (const candidate of allProds) {

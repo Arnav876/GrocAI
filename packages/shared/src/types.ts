@@ -31,12 +31,14 @@ export interface NormalizedUnitPrice {
 export interface PriceObservation {
   platform: PlatformId;
   productId?: string;
+  externalId?: string;
   productUrl?: string;
   imageUrl?: string;
   searchUrl?: string;
   title: string;
   brand?: string;
   variant?: string;
+  packSize?: string;
   quantity?: number;
   unit?: string;
   price?: number; // In Rupees for public contract (float/number); internally store paise
@@ -47,13 +49,87 @@ export interface PriceObservation {
   currency: "INR";
   availability?: AvailabilityStatus;
   locationKey?: string;
+  pincode?: string;
   serviceableArea?: string;
+  latitude?: number;
+  longitude?: number;
   sourceType: SourceType;
   verificationStatus?: PriceVerificationStatus;
   observedAt: string;
+  fetchedAt?: string;
+  scrapeRunId?: string;
   confidence: number;
   normalizedUnitPrice?: NormalizedUnitPrice;
+  normalizedUnitPricePaise?: number;
+  normalizedUnit?: string;
   notes?: string[];
+}
+
+export interface LocationContext {
+  locationKey: string;
+  pincode: string;
+  city: string;
+  latitude: number;
+  longitude: number;
+  serviceableArea?: string;
+}
+
+export type ScrapeTrigger = "scheduled" | "on_demand" | "refresh" | "manual";
+export type ScrapeRunStatus = "pending" | "running" | "completed" | "failed" | "blocked";
+
+export interface ScrapeRun {
+  id: string;
+  platform: PlatformId;
+  locationKey: string;
+  trigger: ScrapeTrigger;
+  status: ScrapeRunStatus;
+  queries: string[];
+  itemsFound: number;
+  error?: string;
+  startedAt: string;
+  finishedAt?: string;
+}
+
+export interface ScrapeJob {
+  id: string;
+  platform: PlatformId;
+  queries: string[];
+  locationKey: string;
+  priority: number;
+  status: "queued" | "running" | "completed" | "failed" | "blocked";
+  attempts: number;
+  maxAttempts: number;
+  error?: string;
+  scrapeRunId?: string;
+  scheduledFor: string;
+  lockedAt?: string;
+  lockedBy?: string;
+  completedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RawObservation {
+  platform: PlatformId;
+  externalId?: string;
+  title: string;
+  brand?: string;
+  variant?: string;
+  packSize?: string;
+  quantity?: number;
+  unit?: string;
+  pricePaise?: number;
+  originalPricePaise?: number;
+  discountPercentage?: number;
+  availability?: AvailabilityStatus;
+  productUrl?: string;
+  imageUrl?: string;
+  searchUrl?: string;
+  pincode?: string;
+  serviceableArea?: string;
+  latitude?: number;
+  longitude?: number;
+  rawPayload?: unknown;
 }
 
 export interface FeeRange {

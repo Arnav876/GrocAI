@@ -23,12 +23,15 @@ import { defaultMatcher } from "./matching/matchingService.js";
 import { createNLParser } from "./services/naturalLanguageService.js";
 import { CatalogBackgroundService } from "./services/catalogJobs.js";
 import { GrocerySyncService } from "./services/grocerySyncService.js";
+import { PostgresScrapeQueue } from "./ingestion/queue.js";
+import { toObservation } from "./ingestion/normalize.js";
 
 export function createServer(prisma: PrismaClient) {
   const app = express();
   const registry = new ConnectorRegistry(prisma);
   const catalogJobs = new CatalogBackgroundService(prisma, registry);
   const syncService = new GrocerySyncService(prisma, registry);
+  const scrapeQueue = new PostgresScrapeQueue(prisma);
   const nlParser = createNLParser();
 
   // Security Headers
@@ -493,6 +496,264 @@ export function createServer(prisma: PrismaClient) {
     }
   });
 
+  // POST /api/ingestion/refresh
+  app.post("/api/ingestion/refresh", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const queries: string[] = Array.isArray(req.body.queries)
+        ? req.body.queries
+        : req.body.query
+        ? [req.body.query]
+        : [];
+      const platforms: PlatformId[] =
+        Array.isArray(req.body.platforms) && req.body.platforms.length > 0
+          ? req.body.platforms
+          : ["blinkit", "zepto", "bigbasket"];
+      const locationKey = (req.body.locationKey as string) || "delhi_110001";
+      const priority = Number(req.body.priority || 5);
+
+      if (queries.length === 0) {
+        return res.status(400).json({ error: "queries must be a non-empty array of strings" });
+      }
+
+      const jobIds: string[] = [];
+      for (const p of platforms) {
+        const jobId = await scrapeQueue.enqueue({
+          platform: p,
+          queries,
+          locationKey,
+          priority,
+        });
+        jobIds.push(jobId);
+      }
+
+      return res.status(202).json({
+        status: "queued",
+        jobId: jobIds[0],
+        jobIds,
+        platforms,
+        queries,
+        message: `Enqueued ${jobIds.length} ingestion jobs for processing`,
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // GET /api/ingestion/jobs/:id
+  app.get("/api/ingestion/jobs/:id", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const job = await prisma.scrapeJob.findUnique({
+        where: { id: req.params.id },
+        include: { scrapeRun: true },
+      });
+
+      if (!job) {
+        return res.status(404).json({ error: `Ingestion job ${req.params.id} not found` });
+      }
+
+      const runs = job.scrapeRunId
+        ? await prisma.scrapeRun.findMany({ where: { id: job.scrapeRunId } })
+        : [];
+
+      return res.json({
+        id: job.id,
+        platform: job.platform,
+        status: job.status,
+        queries: job.queries,
+        locationKey: job.locationKey,
+        attempts: job.attempts,
+        error: job.error,
+        platformRuns: runs,
+        itemsFound: job.scrapeRun?.itemsFound || 0,
+        scheduledFor: job.scheduledFor.toISOString(),
+        completedAt: job.completedAt?.toISOString() || null,
+        createdAt: job.createdAt.toISOString(),
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // GET /api/ingestion/status
+  app.get("/api/ingestion/status", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const queueDepth = await scrapeQueue.getStats();
+
+      const lastRunByPlatform: Record<string, any> = {};
+      for (const pid of SUPPORTED_PLATFORMS) {
+        const lastRun = await prisma.scrapeRun.findFirst({
+          where: { platform: pid },
+          orderBy: { startedAt: "desc" },
+        });
+        lastRunByPlatform[pid] = lastRun
+          ? {
+              id: lastRun.id,
+              status: lastRun.status,
+              trigger: lastRun.trigger,
+              itemsFound: lastRun.itemsFound,
+              error: lastRun.error,
+              startedAt: lastRun.startedAt.toISOString(),
+              finishedAt: lastRun.finishedAt?.toISOString() || null,
+            }
+          : null;
+      }
+
+      const blockedPlatforms = SUPPORTED_PLATFORMS.filter(
+        (pid) =>
+          pid === "instamart" ||
+          lastRunByPlatform[pid]?.status === "blocked" ||
+          registry.isKillSwitchActive(pid)
+      );
+
+      return res.json({
+        timestamp: new Date().toISOString(),
+        queueDepth,
+        lastRunByPlatform,
+        blockedPlatforms,
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // POST /api/observations/manual
+  app.post("/api/observations/manual", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const {
+        platform = "instamart",
+        title,
+        pricePaise,
+        priceRupees,
+        mrpPaise,
+        packSize,
+        pincode = "110001",
+        productUrl,
+        observedAt = new Date().toISOString(),
+      } = req.body;
+
+      if (!title) {
+        return res.status(400).json({ error: "title is required" });
+      }
+
+      const calculatedPricePaise =
+        pricePaise !== undefined
+          ? Math.round(Number(pricePaise))
+          : priceRupees !== undefined
+          ? Math.round(Number(priceRupees) * 100)
+          : undefined;
+
+      if (calculatedPricePaise === undefined || calculatedPricePaise <= 0) {
+        return res.status(400).json({ error: "Valid pricePaise or priceRupees is required" });
+      }
+
+      const allProducts = await prisma.product.findMany();
+      let bestProd: any = null;
+      let highestConf = -1;
+
+      for (const cand of allProducts) {
+        const m = defaultMatcher.match(
+          { query: title, packSize },
+          { id: cand.id, name: cand.name, brand: cand.brand, variant: cand.variant, packSize: cand.packSize }
+        );
+        if (m.isMatch && m.confidence > highestConf) {
+          highestConf = m.confidence;
+          bestProd = cand;
+        }
+      }
+
+      const obs = toObservation(
+        {
+          platform: platform as PlatformId,
+          title,
+          brand: bestProd?.brand,
+          variant: bestProd?.variant,
+          packSize: packSize || bestProd?.packSize,
+          pricePaise: calculatedPricePaise,
+          originalPricePaise: mrpPaise ? Math.round(Number(mrpPaise)) : calculatedPricePaise,
+          productUrl,
+          pincode,
+          serviceableArea: "Manual User Entry",
+        },
+        { pincode, locationKey: `loc_${pincode}` },
+        {
+          productId: bestProd?.id,
+          sourceType: "manual",
+          verificationStatus: "cached",
+          confidence: highestConf > 0 ? highestConf : 0.9,
+        }
+      );
+
+      // Persist PriceObservation
+      const savedObs = await prisma.priceObservation.create({
+        data: {
+          productId: obs.productId,
+          platform: obs.platform,
+          rawTitle: obs.title,
+          brand: obs.brand,
+          variant: obs.variant,
+          packSize: obs.packSize,
+          pricePaise: obs.pricePaise,
+          originalPricePaise: obs.originalPricePaise,
+          currency: "INR",
+          availability: "available",
+          productUrl: obs.productUrl,
+          pincode: obs.pincode,
+          serviceableArea: obs.serviceableArea,
+          normalizedUnitPricePaise: obs.normalizedUnitPricePaise,
+          normalizedUnit: obs.normalizedUnit,
+          sourceType: "manual",
+          verificationStatus: "cached",
+          confidence: obs.confidence,
+          observedAt: new Date(obs.observedAt),
+          fetchedAt: new Date(),
+          notes: ["User-submitted manual observation via /api/observations/manual"],
+        },
+      });
+
+      // If matched with existing product, upsert listing
+      if (bestProd) {
+        await prisma.platformListing.upsert({
+          where: {
+            productId_platform: {
+              productId: bestProd.id,
+              platform: platform as PlatformId,
+            },
+          },
+          create: {
+            productId: bestProd.id,
+            platform,
+            currentPricePaise: calculatedPricePaise,
+            availability: "available",
+            isStale: false,
+            confidence: obs.confidence,
+            sourceType: "manual",
+            lastObservedAt: new Date(obs.observedAt),
+            productUrl,
+          },
+          update: {
+            currentPricePaise: calculatedPricePaise,
+            availability: "available",
+            isStale: false,
+            confidence: obs.confidence,
+            sourceType: "manual",
+            lastObservedAt: new Date(obs.observedAt),
+            productUrl: productUrl || undefined,
+          },
+        });
+      }
+
+      return res.status(201).json({
+        message: "Manual observation recorded successfully",
+        observation: savedObs,
+        matchedProduct: bestProd
+          ? { id: bestProd.id, name: bestProd.name, confidence: highestConf }
+          : null,
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
   // POST /api/comparisons
   app.post("/api/comparisons", async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -591,11 +852,14 @@ export function createServer(prisma: PrismaClient) {
         include: { listings: true },
       });
 
-      const optimizationItems: RequestedOptimizationItem[] = parsed.items.map((it, idx) => {
+      const unmatchedWarnings: string[] = [];
+      const optimizationItems: RequestedOptimizationItem[] = [];
+
+      parsed.items.forEach((it, idx) => {
         const q = it.query.toLowerCase().trim();
 
         // Use matcher to score candidates
-        let bestProd = allProducts[0];
+        let bestProd: any = null;
         let highestConfidence = -1;
 
         for (const prod of allProducts) {
@@ -607,6 +871,11 @@ export function createServer(prisma: PrismaClient) {
             highestConfidence = matchResult.confidence;
             bestProd = prod;
           }
+        }
+
+        if (!bestProd) {
+          unmatchedWarnings.push(`Item "${it.query}" could not be matched in catalog (item_not_found) and was excluded.`);
+          return;
         }
 
         const listingsMap: Record<PlatformId, any> = {
@@ -629,7 +898,7 @@ export function createServer(prisma: PrismaClient) {
           };
         }
 
-        return {
+        optimizationItems.push({
           id: `item-${idx}-${bestProd.id}`,
           query: it.query,
           quantity: it.quantity,
@@ -639,8 +908,15 @@ export function createServer(prisma: PrismaClient) {
           variant: bestProd.variant,
           packSize: bestProd.packSize,
           listings: listingsMap,
-        };
+        });
       });
+
+      if (optimizationItems.length === 0) {
+        return res.status(400).json({
+          error: "None of the requested items could be matched in the catalog.",
+          warnings: unmatchedWarnings,
+        });
+      }
 
       // 3. Run pure optimization engine
       const optResult = runOptimizationEngine({
@@ -662,7 +938,7 @@ export function createServer(prisma: PrismaClient) {
           baselineName: optResult.baselineName,
           baselineTotalPaise: optResult.baselineTotalPaise,
           optionsJson: JSON.stringify(optResult.options),
-          warnings: optResult.warnings,
+          warnings: [...unmatchedWarnings, ...optResult.warnings],
         },
       });
 
@@ -675,7 +951,7 @@ export function createServer(prisma: PrismaClient) {
         baselineTotalPaise: optResult.baselineTotalPaise,
         baselineTotalRupees: optResult.baselineTotalRupees,
         options: optResult.options,
-        warnings: optResult.warnings,
+        warnings: [...unmatchedWarnings, ...optResult.warnings],
       });
     } catch (err: any) {
       if (err.name === "ZodError") {

@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Search, Filter, SlidersHorizontal, AlertCircle, RefreshCw } from "lucide-react";
+import { Search, Filter, SlidersHorizontal, AlertCircle, RefreshCw, PlusCircle } from "lucide-react";
 import { apiClient } from "../services/apiClient.js";
 import { ProductSummary, SUPPORTED_PLATFORMS, PLATFORM_METADATA } from "@groqai/shared";
 import { ProductCard } from "../components/products/ProductCard.js";
+import { ManualPriceModal } from "../components/products/ManualPriceModal.js";
 import { MOCK_CATEGORIES } from "../fixtures/mockCategories.js";
 import { useBasket } from "../context/BasketContext.js";
 
@@ -19,6 +20,7 @@ export const SearchPage: React.FC = () => {
   const [products, setProducts] = useState<ProductSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [isManualModalOpen, setIsManualModalOpen] = useState(false);
   const { pincode } = useBasket();
 
   useEffect(() => {
@@ -111,6 +113,15 @@ export const SearchPage: React.FC = () => {
             >
               <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
               <span className="hidden sm:inline">{refreshing ? "Syncing..." : "Live Refresh"}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsManualModalOpen(true)}
+              className="bg-white border border-brand-navy/20 hover:border-brand-navy text-brand-navy hover:bg-gray-50 text-xs font-bold px-3 py-2.5 rounded-xl transition-colors shadow-xs flex items-center gap-1.5"
+              title="Add Instamart or manual price observation"
+            >
+              <PlusCircle className="w-3.5 h-3.5 text-brand-green" />
+              <span className="hidden sm:inline">+ Add Price</span>
             </button>
           </form>
         </div>
@@ -266,6 +277,14 @@ export const SearchPage: React.FC = () => {
           )}
         </div>
       </div>
+
+      <ManualPriceModal
+        isOpen={isManualModalOpen}
+        onClose={() => setIsManualModalOpen(false)}
+        onSuccess={() => fetchResults(false)}
+        defaultTitle={searchTerm}
+        defaultPincode={pincode}
+      />
     </div>
   );
 };

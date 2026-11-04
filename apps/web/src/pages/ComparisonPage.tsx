@@ -361,6 +361,10 @@ export const ComparisonPage: React.FC = () => {
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
                             Live Verified
                           </span>
+                        ) : platData?.sourceType === "manual" ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 text-[10px] font-bold border border-purple-200">
+                            Manual Entry
+                          </span>
                         ) : platData?.verificationStatus === "cached" ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-50 text-sky-800 text-[10px] font-bold border border-sky-200">
                             Recently Cached
@@ -371,7 +375,7 @@ export const ComparisonPage: React.FC = () => {
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 text-[10px] font-semibold border border-gray-200">
-                            Indicative ({platData?.sourceType || "mock"})
+                            Mock Estimate
                           </span>
                         )}
                       </div>

@@ -1,0 +1,66 @@
+{
+  "platform": "zepto",
+  "query": "milk",
+  "products": [
+    {
+      "id": "5368b5e7-6b2b-42f3-bada-4d4d16d13ebc",
+      "name": "Kinder Schoko-Bons Crispy | 12 pcs",
+      "packSize": "1 pack (67.2 g)",
+      "sellingPrice": "₹135",
+      "mrp": "₹150",
+      "productUrl": "https://www.zepto.com/pn/kinder-schoko-bons-crispy-12-pcs/pvid/5368b5e7-6b2b-42f3-bada-4d4d16d13ebc",
+      "imageUrl": "https://cdn.zeptonow.com/production/ik-seo/tr:w-403,ar-4504-4504,pr-true,f-auto,q-40,dpr-2/cms/product_variant/6dc614a8-31c7-4277-bc04-452ddbdc1544/Kinder-Schoko-Bons-Crispy-12-pcs.jpg",
+      "isOutOfStock": false
+    },
+    {
+      "id": "72f3c157-6b72-47b7-b0fe-72396a5cb489",
+      "name": "Kinder Schoko-Bons Crispy | 16 pcs",
+      "packSize": "1 pack (89.6 g)",
+      "sellingPrice": "₹183",
+      "mrp": "₹229",
+      "productUrl": "https://www.zepto.com/pn/kinder-schoko-bons-crispy-16-pcs/pvid/72f3c157-6b72-47b7-b0fe-72396a5cb489",
+      "imageUrl": "https://cdn.zeptonow.com/production/ik-seo/tr:w-403,ar-4504-4504,pr-true,f-auto,q-40,dpr-2/cms/product_variant/da26f7a6-6cd9-479f-9659-254676399a86/Kinder-Schoko-Bons-Crispy-16-pcs.jpg",
+      "isOutOfStock": false
+    },
+    {
+      "id": "6521f92a-11a5-4737-97aa-77a1788e0a2c",
+      "name": "Kinder Lantern Pack",
+      "packSize": "1 pack (100.4 g)",
+      "sellingPrice": "₹289",
+      "mrp": "₹499",
+      "productUrl": "https://www.zepto.com/pn/kinder-lantern-pack/pvid/6521f92a-11a5-4737-97aa-77a1788e0a2c",
+      "imageUrl": "https://cdn.zeptonow.com/production/ik-seo/tr:w-403,ar-4167-4167,pr-true,f-auto,q-40,dpr-2/cms/product_variant/888cba4e-1ed0-444c-9067-35bd80159fa9/Kinder-Lantern-Pack.jpg",
+      "isOutOfStock": false
+    },
+    {
+      "id": "96f84573-973b-4f5a-bf5b-f92a06916246",
+      "name": "Kinder Rocket Pack",
+      "packSize": "1 pack (2 x 56.8 g)",
+      "sellingPrice": "₹337",
+      "mrp": "₹449",
+      "productUrl": "https://www.zepto.com/pn/kinder-rocket-pack/pvid/96f84573-973b-4f5a-bf5b-f92a06916246",
+      "imageUrl": "https://cdn.zeptonow.com/production/ik-seo/tr:w-403,ar-4167-4167,pr-true,f-auto,q-40,dpr-2/cms/product_variant/e514a3a2-4e13-4838-b666-e4c9023ac090/Kinder-Rocket-Pack.jpg",
+      "isOutOfStock": false
+    },
+    {
+      "id": "6c8b1d6c-ba1e-48ff-bd53-0464e3ffd24a",
+      "name": "Kinder Anar Pack",
+      "packSize": "1 pack (3 x 31.2 g)",
+      "sellingPrice": "₹299",
+      "mrp": "₹399",
+      "productUrl": "https://www.zepto.com/pn/kinder-anar-pack/pvid/6c8b1d6c-ba1e-48ff-bd53-0464e3ffd24a",
+      "imageUrl": "https://cdn.zeptonow.com/production/ik-seo/tr:w-403,ar-1000-999,pr-true,f-auto,q-40,dpr-2/cms/product_variant/10095a2e-e1eb-4296-8154-bc511ca1534f/Kinder-Anar-Pack.jpg",
+      "isOutOfStock": false
+    },
+    {
+      "id": "47dbd1cc-a802-44df-b747-63ccdad8a73f",
+      "name": "Kinder Joy Pink | Chocolate | Assorted",
+      "packSize": "1 pack (3 pcs)",
+      "sellingPrice": "₹146",
+      "mrp": "₹150",
+      "productUrl": "https://www.zepto.com/pn/kinder-joy-pink-chocolate-assorted/pvid/47dbd1cc-a802-44df-b747-63ccdad8a73f",
+      "imageUrl": "https://cdn.zeptonow.com/production/ik-seo/tr:w-403,ar-1024-1024,pr-true,f-auto,q-40,dpr-2/cms/product_variant/22afba5b-5a65-4ab8-a3d5-b49e4687dee6/Kinder-Joy-Pink-Chocolate-Assorted.jpg",
+      "isOutOfStock": false
+    }
+  ]
+}
