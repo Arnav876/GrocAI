@@ -279,6 +279,7 @@ export const PlatformsPage: React.FC = () => {
                 {/* Footer Metrics */}
                 <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 font-mono">
                   <span>Latency: {plat.latencyMs}ms</span>
+                  <span>Sync: {(plat as any).lastSuccessfulFetch ? "Active" : "Sandbox"}</span>
                   <span>Error Rate: {plat.errorRate}%</span>
                 </div>
               </div>

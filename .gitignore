@@ -31,3 +31,6 @@ coverage/
 .vscode/
 *.swp
 *.swo
+.agents/hooks.json
+.cursor/hooks.json
+GroqAI

@@ -10,6 +10,8 @@ import {
   PLATFORM_METADATA,
   PlatformId,
   paiseToRupees,
+  determinePriceVerificationStatus,
+  calculateNormalizedUnitPrice,
 } from "@groqai/shared";
 import { ConnectorRegistry } from "./connectors/registry.js";
 import {
@@ -20,11 +22,13 @@ import {
 import { defaultMatcher } from "./matching/matchingService.js";
 import { createNLParser } from "./services/naturalLanguageService.js";
 import { CatalogBackgroundService } from "./services/catalogJobs.js";
+import { GrocerySyncService } from "./services/grocerySyncService.js";
 
 export function createServer(prisma: PrismaClient) {
   const app = express();
   const registry = new ConnectorRegistry(prisma);
   const catalogJobs = new CatalogBackgroundService(prisma, registry);
+  const syncService = new GrocerySyncService(prisma, registry);
   const nlParser = createNLParser();
 
   // Security Headers
@@ -130,24 +134,43 @@ export function createServer(prisma: PrismaClient) {
         },
       });
 
-      // Transform products into ProductSummary
-      const summaries = products.map((prod) => {
+      // Helper to transform Product into rich ProductSummary with all 14 sync fields
+      function formatProductSummary(prod: any) {
         let lowestPricePaise = Infinity;
         let lowestPlatform: PlatformId = "blinkit";
 
         const platformPrices: any = {};
-        for (const l of prod.listings) {
+        for (const l of prod.listings || []) {
           const pid = l.platform as PlatformId;
           const pricePaise = l.currentPricePaise || undefined;
+          const observedAtStr = l.lastObservedAt ? l.lastObservedAt.toISOString() : new Date().toISOString();
+          const verificationStatus = determinePriceVerificationStatus(observedAtStr, l.sourceType, l.availability);
+          const normalizedUnitPrice = pricePaise && prod.packSize
+            ? calculateNormalizedUnitPrice(pricePaise, prod.packSize) || undefined
+            : undefined;
+
+          let originalPricePaise = prod.mrpPaise || undefined;
+          let discountPercentage = prod.discountPercentage || 0;
+          if (originalPricePaise && pricePaise && originalPricePaise > pricePaise) {
+            discountPercentage = Math.round(((originalPricePaise - pricePaise) / originalPricePaise) * 100);
+          }
+
           platformPrices[pid] = {
             pricePaise,
             priceRupees: pricePaise ? pricePaise / 100 : undefined,
+            originalPricePaise,
+            originalPriceRupees: originalPricePaise ? originalPricePaise / 100 : undefined,
+            discountPercentage,
             availability: l.availability,
             isStale: l.isStale,
-            observedAt: l.lastObservedAt.toISOString(),
+            observedAt: observedAtStr,
             sourceType: l.sourceType,
             confidence: l.confidence,
-            searchUrl: l.searchUrl,
+            verificationStatus,
+            normalizedUnitPrice,
+            productUrl: l.productUrl || undefined,
+            searchUrl: l.searchUrl || `${PLATFORM_METADATA[pid].searchBaseUrl}${encodeURIComponent(prod.name)}`,
+            serviceableArea: "Central Delhi",
           };
 
           if (l.availability === "available" && pricePaise && pricePaise < lowestPricePaise) {
@@ -157,6 +180,9 @@ export function createServer(prisma: PrismaClient) {
         }
 
         const effectiveLowest = lowestPricePaise < Infinity ? lowestPricePaise : 0;
+        const lowestNormalizedUnitPrice = effectiveLowest > 0 && prod.packSize
+          ? calculateNormalizedUnitPrice(effectiveLowest, prod.packSize) || undefined
+          : undefined;
 
         return {
           id: prod.id,
@@ -165,6 +191,7 @@ export function createServer(prisma: PrismaClient) {
           category: prod.categoryId,
           variant: prod.variant,
           packSize: prod.packSize,
+          normalizedUnitPrice: lowestNormalizedUnitPrice,
           rating: prod.rating || 4.7,
           reviewCount: prod.reviewCount || 100,
           lowestPricePaise: effectiveLowest,
@@ -177,9 +204,25 @@ export function createServer(prisma: PrismaClient) {
           isNew: prod.isNew,
           platformPrices,
         };
-      });
+      }
 
-      res.json(summaries);
+      const forceRefresh = req.query.refresh === "true";
+      const pincode = (req.query.pincode as string) || "110001";
+      const locationKey = `delhi_${pincode}`;
+
+      if (forceRefresh && products.length > 0) {
+        const topToSync = products.slice(0, 5);
+        await Promise.allSettled(
+          topToSync.map((p) => syncService.syncProduct(p.id, locationKey, { forceRefresh: true }))
+        );
+        const refreshedProducts = await prisma.product.findMany({
+          where: whereClause,
+          include: { listings: true },
+        });
+        return res.json(refreshedProducts.map(formatProductSummary));
+      }
+
+      res.json(products.map(formatProductSummary));
     } catch (err) {
       next(err);
     }
@@ -188,8 +231,17 @@ export function createServer(prisma: PrismaClient) {
   // GET /api/products/:id
   app.get("/api/products/:id", async (req: Request, res: Response, next: NextFunction) => {
     try {
+      const { id } = req.params;
+      const forceRefresh = req.query.refresh === "true";
+      const pincode = (req.query.pincode as string) || "110001";
+      const locationKey = `delhi_${pincode}`;
+
+      if (forceRefresh) {
+        await syncService.syncProduct(id, locationKey, { forceRefresh: true });
+      }
+
       const prod = await prisma.product.findUnique({
-        where: { id: req.params.id },
+        where: { id },
         include: { listings: true },
       });
 
@@ -204,15 +256,34 @@ export function createServer(prisma: PrismaClient) {
       for (const l of prod.listings) {
         const pid = l.platform as PlatformId;
         const pricePaise = l.currentPricePaise || undefined;
+        const observedAtStr = l.lastObservedAt ? l.lastObservedAt.toISOString() : new Date().toISOString();
+        const verificationStatus = determinePriceVerificationStatus(observedAtStr, l.sourceType, l.availability);
+        const normalizedUnitPrice = pricePaise && prod.packSize
+          ? calculateNormalizedUnitPrice(pricePaise, prod.packSize) || undefined
+          : undefined;
+
+        let originalPricePaise = prod.mrpPaise || undefined;
+        let discountPercentage = prod.discountPercentage || 0;
+        if (originalPricePaise && pricePaise && originalPricePaise > pricePaise) {
+          discountPercentage = Math.round(((originalPricePaise - pricePaise) / originalPricePaise) * 100);
+        }
+
         platformPrices[pid] = {
           pricePaise,
           priceRupees: pricePaise ? pricePaise / 100 : undefined,
+          originalPricePaise,
+          originalPriceRupees: originalPricePaise ? originalPricePaise / 100 : undefined,
+          discountPercentage,
           availability: l.availability,
           isStale: l.isStale,
-          observedAt: l.lastObservedAt.toISOString(),
+          observedAt: observedAtStr,
           sourceType: l.sourceType,
           confidence: l.confidence,
-          searchUrl: l.searchUrl,
+          verificationStatus,
+          normalizedUnitPrice,
+          productUrl: l.productUrl || undefined,
+          searchUrl: l.searchUrl || `${PLATFORM_METADATA[pid].searchBaseUrl}${encodeURIComponent(prod.name)}`,
+          serviceableArea: "Central Delhi",
         };
 
         if (l.availability === "available" && pricePaise && pricePaise < lowestPricePaise) {
@@ -222,6 +293,9 @@ export function createServer(prisma: PrismaClient) {
       }
 
       const effectiveLowest = lowestPricePaise < Infinity ? lowestPricePaise : 0;
+      const normalizedUnitPrice = effectiveLowest > 0 && prod.packSize
+        ? calculateNormalizedUnitPrice(effectiveLowest, prod.packSize) || undefined
+        : undefined;
 
       res.json({
         id: prod.id,
@@ -230,6 +304,7 @@ export function createServer(prisma: PrismaClient) {
         category: prod.categoryId,
         variant: prod.variant,
         packSize: prod.packSize,
+        normalizedUnitPrice,
         rating: prod.rating || 4.7,
         reviewCount: prod.reviewCount || 100,
         lowestPricePaise: effectiveLowest,
@@ -241,6 +316,166 @@ export function createServer(prisma: PrismaClient) {
         isOutOfStock: prod.isOutOfStock,
         isNew: prod.isNew,
         platformPrices,
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // POST /api/products/:id/refresh
+  app.post("/api/products/:id/refresh", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      const pincode = req.body?.pincode || (req.query.pincode as string) || "110001";
+      const locationKey = `delhi_${pincode}`;
+
+      const syncResult = await syncService.syncProduct(id, locationKey, { forceRefresh: true });
+
+      const prod = await prisma.product.findUnique({
+        where: { id },
+        include: { listings: true },
+      });
+
+      if (!prod) {
+        return res.status(404).json({ error: "Product not found" });
+      }
+
+      let lowestPricePaise = Infinity;
+      let lowestPlatform: PlatformId = "blinkit";
+      const platformPrices: any = {};
+
+      for (const l of prod.listings) {
+        const pid = l.platform as PlatformId;
+        const pricePaise = l.currentPricePaise || undefined;
+        const observedAtStr = l.lastObservedAt ? l.lastObservedAt.toISOString() : new Date().toISOString();
+        const verificationStatus = determinePriceVerificationStatus(observedAtStr, l.sourceType, l.availability);
+        const normalizedUnitPrice = pricePaise && prod.packSize
+          ? calculateNormalizedUnitPrice(pricePaise, prod.packSize) || undefined
+          : undefined;
+
+        let originalPricePaise = prod.mrpPaise || undefined;
+        let discountPercentage = prod.discountPercentage || 0;
+        if (originalPricePaise && pricePaise && originalPricePaise > pricePaise) {
+          discountPercentage = Math.round(((originalPricePaise - pricePaise) / originalPricePaise) * 100);
+        }
+
+        platformPrices[pid] = {
+          pricePaise,
+          priceRupees: pricePaise ? pricePaise / 100 : undefined,
+          originalPricePaise,
+          originalPriceRupees: originalPricePaise ? originalPricePaise / 100 : undefined,
+          discountPercentage,
+          availability: l.availability,
+          isStale: l.isStale,
+          observedAt: observedAtStr,
+          sourceType: l.sourceType,
+          confidence: l.confidence,
+          verificationStatus,
+          normalizedUnitPrice,
+          productUrl: l.productUrl || undefined,
+          searchUrl: l.searchUrl || `${PLATFORM_METADATA[pid].searchBaseUrl}${encodeURIComponent(prod.name)}`,
+          serviceableArea: "Central Delhi",
+        };
+
+        if (l.availability === "available" && pricePaise && pricePaise < lowestPricePaise) {
+          lowestPricePaise = pricePaise;
+          lowestPlatform = pid;
+        }
+      }
+
+      const effectiveLowest = lowestPricePaise < Infinity ? lowestPricePaise : 0;
+      const normalizedUnitPrice = effectiveLowest > 0 && prod.packSize
+        ? calculateNormalizedUnitPrice(effectiveLowest, prod.packSize) || undefined
+        : undefined;
+
+      res.json({
+        product: {
+          id: prod.id,
+          name: prod.name,
+          brand: prod.brand,
+          category: prod.categoryId,
+          variant: prod.variant,
+          packSize: prod.packSize,
+          normalizedUnitPrice,
+          rating: prod.rating || 4.7,
+          reviewCount: prod.reviewCount || 100,
+          lowestPricePaise: effectiveLowest,
+          lowestPriceRupees: paiseToRupees(effectiveLowest),
+          lowestPlatform,
+          mrpPaise: prod.mrpPaise || undefined,
+          mrpRupees: prod.mrpPaise ? paiseToRupees(prod.mrpPaise) : undefined,
+          discountPercentage: prod.discountPercentage || 0,
+          isOutOfStock: prod.isOutOfStock,
+          isNew: prod.isNew,
+          platformPrices,
+        },
+        syncResult,
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // POST /api/products/sync
+  app.post("/api/products/sync", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { productIds = [], query, pincode = "110001", forceRefresh = false } = req.body;
+      const locationKey = `delhi_${pincode}`;
+
+      let idsToSync: string[] = productIds;
+      if (idsToSync.length === 0 && query) {
+        const prods = await prisma.product.findMany({
+          where: {
+            OR: [
+              { name: { contains: query, mode: "insensitive" } },
+              { brand: { contains: query, mode: "insensitive" } },
+            ],
+          },
+          take: 10,
+        });
+        idsToSync = prods.map((p) => p.id);
+      }
+
+      const outcomes: any[] = [];
+      for (const pid of idsToSync) {
+        try {
+          const resSync = await syncService.syncProduct(pid, locationKey, { forceRefresh });
+          outcomes.push(resSync);
+        } catch (e: any) {
+          outcomes.push({ productId: pid, error: e.message });
+        }
+      }
+
+      res.json({
+        timestamp: new Date().toISOString(),
+        locationKey,
+        totalSynced: outcomes.length,
+        outcomes,
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // GET /api/sync/status
+  app.get("/api/sync/status", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const adapters = registry.getAllAdapters().map((ad) => ad.getStatus());
+      const totalListings = await prisma.platformListing.count();
+      const staleListings = await prisma.platformListing.count({ where: { isStale: true } });
+      const recentObservations = await prisma.priceObservation.count({
+        where: { observedAt: { gte: new Date(Date.now() - 60 * 60 * 1000) } },
+      });
+
+      res.json({
+        timestamp: new Date().toISOString(),
+        adapters,
+        cache: {
+          totalListings,
+          staleListings,
+          freshListings: totalListings - staleListings,
+          recentObservations1h: recentObservations,
+        },
       });
     } catch (err) {
       next(err);
@@ -472,6 +707,8 @@ export function createServer(prisma: PrismaClient) {
   app.get("/api/platforms", (req: Request, res: Response) => {
     const statuses = SUPPORTED_PLATFORMS.map((pid) => {
       const conn = registry.getConnectorSafe(pid);
+      const adapter = registry.getAdapterSafe(pid);
+      const adapterStatus = adapter?.getStatus();
       const isKilled = registry.isKillSwitchActive(pid);
       const metrics = registry.getMetrics(pid);
       const mode = registry.getMode(pid);
@@ -479,11 +716,14 @@ export function createServer(prisma: PrismaClient) {
       return {
         id: pid,
         name: PLATFORM_METADATA[pid].name,
+        adapterName: adapter?.getAdapterName() || PLATFORM_METADATA[pid].name,
         mode,
         enabled: !isKilled,
+        hasApiCredentials: adapterStatus?.hasApiCredentials ?? false,
         capabilities: conn ? conn.getCapabilities() : PLATFORM_METADATA[pid].defaultCapabilities,
         status: isKilled ? "disabled" : "healthy",
         lastChecked: new Date().toISOString(),
+        lastSuccessfulFetch: adapterStatus?.lastSuccessfulFetch ?? null,
         latencyMs: metrics.avgLatencyMs,
         errorRate: metrics.errorRate,
         notes: [
@@ -493,6 +733,9 @@ export function createServer(prisma: PrismaClient) {
           ...(metrics.circuitBreaker?.state === "OPEN"
             ? ["Circuit breaker: OPEN (Outbound requests paused)"]
             : []),
+          ...(adapterStatus?.hasApiCredentials
+            ? ["Official API credentials configured on server"]
+            : ["No API credentials configured — running in honest sandbox/links mode"]),
         ],
         metrics,
       };

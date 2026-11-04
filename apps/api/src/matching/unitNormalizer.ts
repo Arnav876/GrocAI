@@ -93,3 +93,6 @@ export function areQuantitiesCompatible(sizeA: string, sizeB: string, tolerance:
   const max = Math.max(normA.value, normB.value);
   return max > 0 && diff / max <= tolerance;
 }
+
+export { calculateNormalizedUnitPrice } from "@groqai/shared";
+

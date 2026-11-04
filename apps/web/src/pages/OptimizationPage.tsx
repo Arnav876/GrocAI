@@ -323,7 +323,19 @@ export const OptimizationPage: React.FC = () => {
                   {plan.items.map((it) => (
                     <div key={it.id} className="py-2.5 flex items-center justify-between gap-4 text-xs">
                       <div>
-                        <div className="font-bold text-brand-navy">{it.matchedTitle}</div>
+                        <div className="font-bold text-brand-navy flex items-center gap-2">
+                          <span>{it.matchedTitle}</span>
+                          {it.sourceType === "authorized_api" && (
+                            <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 font-bold">
+                              Live
+                            </span>
+                          )}
+                          {it.isStale && (
+                            <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-800 font-bold">
+                              Stale
+                            </span>
+                          )}
+                        </div>
                         <div className="text-[11px] text-gray-400">
                           {it.brand} • {it.packSize} • Qty: {it.quantity}
                         </div>

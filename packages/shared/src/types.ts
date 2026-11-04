@@ -13,10 +13,26 @@ export type AvailabilityStatus = "available" | "unavailable" | "unknown";
 
 export type SourceType = "authorized_api" | "partner_feed" | "permitted_page" | "manual" | "mock";
 
+export type PriceVerificationStatus =
+  | "live_verified"
+  | "cached"
+  | "stale"
+  | "unverified"
+  | "unavailable"
+  | "estimate";
+
+export interface NormalizedUnitPrice {
+  unit: string; // e.g. "L", "kg", "pcs"
+  pricePerUnitPaise: number;
+  pricePerUnitRupees: number;
+  displayUnitPrice: string; // e.g. "₹66.00 / L"
+}
+
 export interface PriceObservation {
   platform: PlatformId;
   productId?: string;
   productUrl?: string;
+  imageUrl?: string;
   searchUrl?: string;
   title: string;
   brand?: string;
@@ -24,12 +40,19 @@ export interface PriceObservation {
   quantity?: number;
   unit?: string;
   price?: number; // In Rupees for public contract (float/number); internally store paise
+  pricePaise?: number; // Integer paise
+  originalPrice?: number;
+  originalPricePaise?: number;
+  discountPercentage?: number;
   currency: "INR";
   availability?: AvailabilityStatus;
   locationKey?: string;
+  serviceableArea?: string;
   sourceType: SourceType;
+  verificationStatus?: PriceVerificationStatus;
   observedAt: string;
   confidence: number;
+  normalizedUnitPrice?: NormalizedUnitPrice;
   notes?: string[];
 }
 
@@ -59,6 +82,7 @@ export interface ProductSummary {
   imageUrl?: string;
   variant: string;
   packSize: string;
+  normalizedUnitPrice?: NormalizedUnitPrice;
   rating?: number;
   reviewCount?: number;
   lowestPricePaise: number;
@@ -74,14 +98,21 @@ export interface ProductSummary {
     {
       pricePaise?: number;
       priceRupees?: number;
+      originalPricePaise?: number;
+      originalPriceRupees?: number;
+      discountPercentage?: number;
       availability: AvailabilityStatus;
       isStale: boolean;
       observedAt?: string;
       sourceType: SourceType;
       confidence: number;
+      verificationStatus?: PriceVerificationStatus;
+      normalizedUnitPrice?: NormalizedUnitPrice;
       isUnknownPrice?: boolean;
       productUrl?: string;
+      imageUrl?: string;
       searchUrl?: string;
+      serviceableArea?: string;
       notes?: string[];
     }
   >;

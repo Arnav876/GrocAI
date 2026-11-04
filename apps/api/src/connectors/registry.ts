@@ -2,9 +2,17 @@ import { PlatformId, SUPPORTED_PLATFORMS } from "@groqai/shared";
 import { IPlatformConnector } from "./types.js";
 import { FallbackPlatformConnector, IntegrationMode } from "./fallbackHierarchy.js";
 import { ICartAdapter, NullCartAdapter } from "./cartAdapter.js";
+import {
+  BlinkitAdapter,
+  ZeptoAdapter,
+  InstamartAdapter,
+  BigBasketAdapter,
+  IGroceryPlatformAdapter,
+} from "./adapters/index.js";
 import { PrismaClient } from "@prisma/client";
 
 export class ConnectorRegistry {
+  private adapters = new Map<PlatformId, IGroceryPlatformAdapter>();
   private connectors = new Map<PlatformId, FallbackPlatformConnector>();
   private cartAdapters = new Map<PlatformId, ICartAdapter>();
   private killSwitches = new Map<PlatformId, boolean>();
@@ -14,6 +22,11 @@ export class ConnectorRegistry {
   >();
 
   constructor(private prisma: PrismaClient) {
+    this.adapters.set("blinkit", new BlinkitAdapter(prisma));
+    this.adapters.set("zepto", new ZeptoAdapter(prisma));
+    this.adapters.set("instamart", new InstamartAdapter(prisma));
+    this.adapters.set("bigbasket", new BigBasketAdapter(prisma));
+
     for (const pid of SUPPORTED_PLATFORMS) {
       this.connectors.set(pid, new FallbackPlatformConnector(pid, prisma));
       // Ship honest NullCartAdapter for every platform returning unsupported
@@ -21,6 +34,25 @@ export class ConnectorRegistry {
       this.killSwitches.set(pid, false);
       this.requestStats.set(pid, { total: 0, success: 0, failure: 0, latencyTotalMs: 0 });
     }
+  }
+
+  getAdapter(platformId: PlatformId): IGroceryPlatformAdapter {
+    if (this.killSwitches.get(platformId)) {
+      throw new Error(`Platform adapter for ${platformId} has been disabled by kill switch`);
+    }
+    const adapter = this.adapters.get(platformId);
+    if (!adapter) {
+      throw new Error(`No adapter registered for platform ${platformId}`);
+    }
+    return adapter;
+  }
+
+  getAdapterSafe(platformId: PlatformId): IGroceryPlatformAdapter | undefined {
+    return this.adapters.get(platformId);
+  }
+
+  getAllAdapters(): IGroceryPlatformAdapter[] {
+    return SUPPORTED_PLATFORMS.map((pid) => this.getAdapter(pid));
   }
 
   get(platformId: PlatformId): FallbackPlatformConnector {
@@ -67,6 +99,10 @@ export class ConnectorRegistry {
     const conn = this.connectors.get(platformId);
     if (conn) {
       conn.setMode(mode);
+    }
+    const adapter = this.adapters.get(platformId);
+    if (adapter) {
+      adapter.setMode(mode);
     }
   }
 

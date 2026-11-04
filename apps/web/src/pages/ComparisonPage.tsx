@@ -1,6 +1,16 @@
 import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, Clock, ExternalLink, CheckCircle, XCircle, AlertTriangle, ShoppingCart } from "lucide-react";
+import {
+  ArrowLeft,
+  Clock,
+  ExternalLink,
+  CheckCircle,
+  XCircle,
+  AlertTriangle,
+  ShoppingCart,
+  RefreshCw,
+  Sparkles,
+} from "lucide-react";
 import { apiClient } from "../services/apiClient.js";
 import {
   ProductSummary,
@@ -16,7 +26,28 @@ export const ComparisonPage: React.FC = () => {
   const [product, setProduct] = useState<ProductSummary | null>(null);
   const [allProducts, setAllProducts] = useState<ProductSummary[]>([]);
   const [loading, setLoading] = useState(true);
-  const { addProduct } = useBasket();
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshMessage, setRefreshMessage] = useState<{ text: string; isError?: boolean } | null>(null);
+  const { addProduct, pincode } = useBasket();
+
+  const handleRefresh = async () => {
+    if (!product || refreshing) return;
+    setRefreshing(true);
+    setRefreshMessage(null);
+    try {
+      const res = await apiClient.refreshProduct(product.id, pincode);
+      setProduct(res.product);
+      setRefreshMessage({ text: "Live prices and stock verified from platform adapters." });
+      setAllProducts((prev) => prev.map((p) => (p.id === res.product.id ? res.product : p)));
+    } catch (err: any) {
+      setRefreshMessage({
+        text: `Sync error (${err.message}). Kept verified cached data without overwriting.`,
+        isError: true,
+      });
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -127,18 +158,59 @@ export const ComparisonPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Refresh message alert */}
+      {refreshMessage && (
+        <div
+          className={`mb-4 p-3 rounded-xl border text-xs flex items-center justify-between ${
+            refreshMessage.isError
+              ? "bg-amber-50 border-amber-200 text-amber-900"
+              : "bg-emerald-50 border-emerald-200 text-emerald-900"
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 shrink-0 text-brand-green" />
+            <span>{refreshMessage.text}</span>
+          </div>
+          <button
+            onClick={() => setRefreshMessage(null)}
+            className="font-bold text-gray-500 hover:text-gray-900 ml-4"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {/* 4-Platform Detailed Comparison Matrix Table */}
       <div className="bg-white rounded-2xl border border-brand-border shadow-sm overflow-hidden">
         <div className="p-5 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-base font-bold text-brand-navy">
-              Live Store Comparison Across 4 Platforms
+            <h2 className="text-base font-bold text-brand-navy flex items-center gap-2">
+              <span>Live Store Comparison Across 4 Platforms</span>
+              {refreshing && (
+                <span className="text-[11px] font-semibold text-brand-green flex items-center gap-1">
+                  <RefreshCw className="w-3 h-3 animate-spin" /> Fetching live data...
+                </span>
+              )}
             </h2>
             <p className="text-xs text-brand-grey mt-0.5">
               Verified with exact pack size ({product.packSize}) & variant ({product.variant}).
+              {product.normalizedUnitPrice && (
+                <span className="ml-2 font-bold text-brand-navy">
+                  Normalized Baseline: {product.normalizedUnitPrice.displayUnitPrice}
+                </span>
+              )}
             </p>
           </div>
           <div className="flex items-center gap-3 text-xs font-medium">
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-white bg-brand-green hover:bg-brand-green-hover disabled:opacity-50 px-3.5 py-1.5 rounded-full transition-all shadow-xs"
+              title="Synchronize current prices with live platform adapters"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
+              <span>{refreshing ? "Syncing..." : "Refresh Live Data"}</span>
+            </button>
             <span className="inline-flex items-center gap-1 text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
               <CheckCircle className="w-3.5 h-3.5 text-brand-green" /> Fresh (&lt; 6h)
             </span>
@@ -153,11 +225,11 @@ export const ComparisonPage: React.FC = () => {
             <thead className="bg-gray-50 border-b border-gray-100 text-brand-navy uppercase font-bold text-[11px] tracking-wider">
               <tr>
                 <th className="py-4 px-6">Store Platform</th>
-                <th className="py-4 px-4">Listed Price</th>
+                <th className="py-4 px-4">Listed & Unit Price</th>
                 <th className="py-4 px-4">Effective Discount</th>
                 <th className="py-4 px-4">Stock Availability</th>
                 <th className="py-4 px-4">Last Checked</th>
-                <th className="py-4 px-4">Data Source</th>
+                <th className="py-4 px-4">Verification Status</th>
                 <th className="py-4 px-6 text-right">Official Store Link</th>
               </tr>
             </thead>
@@ -191,25 +263,34 @@ export const ComparisonPage: React.FC = () => {
                               </span>
                             )}
                           </div>
-                          <span className="text-[10px] text-gray-400">Central Delhi Dark Store</span>
+                          <span className="text-[10px] text-gray-400">
+                            {platData?.serviceableArea || "Central Delhi Dark Store"}
+                          </span>
                         </div>
                       </div>
                     </td>
 
-                    {/* Listed Price */}
+                    {/* Listed Price & Normalized Unit Price */}
                     <td className="py-4 px-4">
                       {platData && platData.pricePaise ? (
-                        <div className="flex items-baseline gap-1.5">
-                          <span
-                            className={`text-base font-bold ${
-                              isLowest ? "text-brand-green" : "text-brand-navy"
-                            }`}
-                          >
-                            {formatINR(platData.pricePaise)}
-                          </span>
-                          {product.mrpPaise && product.mrpPaise > platData.pricePaise && (
-                            <span className="text-gray-400 line-through text-[11px]">
-                              {formatINR(product.mrpPaise)}
+                        <div>
+                          <div className="flex items-baseline gap-1.5">
+                            <span
+                              className={`text-base font-bold ${
+                                isLowest ? "text-brand-green" : "text-brand-navy"
+                              }`}
+                            >
+                              {formatINR(platData.pricePaise)}
+                            </span>
+                            {product.mrpPaise && product.mrpPaise > platData.pricePaise && (
+                              <span className="text-gray-400 line-through text-[11px]">
+                                {formatINR(product.mrpPaise)}
+                              </span>
+                            )}
+                          </div>
+                          {platData.normalizedUnitPrice && (
+                            <span className="block text-[11px] font-semibold text-brand-grey">
+                              {platData.normalizedUnitPrice.displayUnitPrice}
                             </span>
                           )}
                         </div>
@@ -272,11 +353,28 @@ export const ComparisonPage: React.FC = () => {
                       )}
                     </td>
 
-                    {/* Source */}
+                    {/* Data Source & Verification Status */}
                     <td className="py-4 px-4">
-                      <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-700 font-mono text-[10px] uppercase font-semibold">
-                        {platData?.sourceType || "mock"}
-                      </span>
+                      <div className="space-y-1">
+                        {platData?.verificationStatus === "live_verified" ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
+                            Live Verified
+                          </span>
+                        ) : platData?.verificationStatus === "cached" ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-50 text-sky-800 text-[10px] font-bold border border-sky-200">
+                            Recently Cached
+                          </span>
+                        ) : platData?.isStale ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold border border-amber-200">
+                            Stale (&gt;6h)
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 text-[10px] font-semibold border border-gray-200">
+                            Indicative ({platData?.sourceType || "mock"})
+                          </span>
+                        )}
+                      </div>
                     </td>
 
                     {/* Store Link */}

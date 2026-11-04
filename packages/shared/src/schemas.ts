@@ -21,23 +21,47 @@ export const SourceTypeSchema = z.enum([
 
 export const AvailabilityStatusSchema = z.enum(["available", "unavailable", "unknown"]);
 
+export const PriceVerificationStatusSchema = z.enum([
+  "live_verified",
+  "cached",
+  "stale",
+  "unverified",
+  "unavailable",
+  "estimate",
+]);
+
+export const NormalizedUnitPriceSchema = z.object({
+  unit: z.string(),
+  pricePerUnitPaise: z.number().int().nonnegative(),
+  pricePerUnitRupees: z.number().nonnegative(),
+  displayUnitPrice: z.string(),
+});
+
 export const PriceObservationSchema = z.object({
   platform: PlatformIdSchema,
   productId: z.string().optional(),
-  productUrl: z.string().url().optional(),
-  searchUrl: z.string().url().optional(),
+  productUrl: z.string().optional(),
+  imageUrl: z.string().optional(),
+  searchUrl: z.string().optional(),
   title: z.string().min(1),
   brand: z.string().optional(),
   variant: z.string().optional(),
   quantity: z.number().positive().optional(),
   unit: z.string().optional(),
   price: z.number().nonnegative().optional(), // In INR rupees at contract boundary
+  pricePaise: z.number().int().nonnegative().optional(),
+  originalPrice: z.number().nonnegative().optional(),
+  originalPricePaise: z.number().int().nonnegative().optional(),
+  discountPercentage: z.number().nonnegative().optional(),
   currency: z.literal("INR"),
   availability: AvailabilityStatusSchema.optional(),
   locationKey: z.string().optional(),
+  serviceableArea: z.string().optional(),
   sourceType: SourceTypeSchema,
+  verificationStatus: PriceVerificationStatusSchema.optional(),
   observedAt: z.string(),
   confidence: z.number().min(0).max(1),
+  normalizedUnitPrice: NormalizedUnitPriceSchema.optional(),
   notes: z.array(z.string()).optional(),
 });
 

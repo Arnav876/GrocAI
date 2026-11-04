@@ -37,25 +37,78 @@ export class GroqApiClient {
     return res.json();
   }
 
-  async searchProducts(query: string = "", category?: string): Promise<ProductSummary[]> {
+  async searchProducts(
+    query: string = "",
+    category?: string,
+    refresh?: boolean,
+    pincode?: string
+  ): Promise<ProductSummary[]> {
     if (this.isUsingMock()) {
       return mockApiService.searchProducts(query, category);
     }
     const params = new URLSearchParams();
     if (query) params.append("q", query);
     if (category) params.append("category", category);
+    if (refresh) params.append("refresh", "true");
+    if (pincode) params.append("pincode", pincode);
     const res = await fetch(`${API_BASE_URL}/api/products/search?${params.toString()}`);
     if (!res.ok) throw new Error(`Failed to search products: ${res.statusText}`);
     return res.json();
   }
 
-  async getProductById(id: string): Promise<ProductSummary | null> {
+  async getProductById(id: string, refresh?: boolean, pincode?: string): Promise<ProductSummary | null> {
     if (this.isUsingMock()) {
       return mockApiService.getProductById(id);
     }
-    const res = await fetch(`${API_BASE_URL}/api/products/${encodeURIComponent(id)}`);
+    const params = new URLSearchParams();
+    if (refresh) params.append("refresh", "true");
+    if (pincode) params.append("pincode", pincode);
+    const qs = params.toString() ? `?${params.toString()}` : "";
+    const res = await fetch(`${API_BASE_URL}/api/products/${encodeURIComponent(id)}${qs}`);
     if (res.status === 404) return null;
     if (!res.ok) throw new Error(`Failed to fetch product: ${res.statusText}`);
+    return res.json();
+  }
+
+  async refreshProduct(id: string, pincode?: string): Promise<{ product: ProductSummary; syncResult: any }> {
+    if (this.isUsingMock()) {
+      const prod = await mockApiService.getProductById(id);
+      if (!prod) throw new Error("Product not found");
+      return { product: prod, syncResult: { status: "cached" } };
+    }
+    const res = await fetch(`${API_BASE_URL}/api/products/${encodeURIComponent(id)}/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pincode: pincode || "110001" }),
+    });
+    if (!res.ok) throw new Error(`Failed to refresh product prices: ${res.statusText}`);
+    return res.json();
+  }
+
+  async syncProducts(
+    productIds?: string[],
+    query?: string,
+    pincode?: string,
+    forceRefresh?: boolean
+  ): Promise<any> {
+    if (this.isUsingMock()) {
+      return { totalSynced: productIds?.length || 0, outcomes: [] };
+    }
+    const res = await fetch(`${API_BASE_URL}/api/products/sync`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ productIds, query, pincode, forceRefresh }),
+    });
+    if (!res.ok) throw new Error(`Failed to sync products: ${res.statusText}`);
+    return res.json();
+  }
+
+  async getSyncStatus(): Promise<any> {
+    if (this.isUsingMock()) {
+      return { adapters: [], cache: { freshListings: 40, staleListings: 0 } };
+    }
+    const res = await fetch(`${API_BASE_URL}/api/sync/status`);
+    if (!res.ok) throw new Error(`Failed to fetch sync status: ${res.statusText}`);
     return res.json();
   }
 

@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Search, Filter, SlidersHorizontal, AlertCircle } from "lucide-react";
+import { Search, Filter, SlidersHorizontal, AlertCircle, RefreshCw } from "lucide-react";
 import { apiClient } from "../services/apiClient.js";
 import { ProductSummary, SUPPORTED_PLATFORMS, PLATFORM_METADATA } from "@groqai/shared";
 import { ProductCard } from "../components/products/ProductCard.js";
 import { MOCK_CATEGORIES } from "../fixtures/mockCategories.js";
+import { useBasket } from "../context/BasketContext.js";
 
 export const SearchPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -17,31 +18,43 @@ export const SearchPage: React.FC = () => {
   const [inStockOnly, setInStockOnly] = useState(false);
   const [products, setProducts] = useState<ProductSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const { pincode } = useBasket();
 
   useEffect(() => {
     setSearchTerm(queryParam);
     setSelectedCategory(categoryParam);
   }, [queryParam, categoryParam]);
 
-  useEffect(() => {
+  const fetchResults = (forceRefresh: boolean = false) => {
     let mounted = true;
-    setLoading(true);
+    if (forceRefresh) setRefreshing(true);
+    else setLoading(true);
+
     apiClient
-      .searchProducts(searchTerm, selectedCategory)
+      .searchProducts(searchTerm, selectedCategory, forceRefresh, pincode)
       .then((data) => {
         if (mounted) {
           setProducts(data);
           setLoading(false);
+          setRefreshing(false);
         }
       })
       .catch((err) => {
         console.error("Search failed:", err);
-        if (mounted) setLoading(false);
+        if (mounted) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       });
 
     return () => {
       mounted = false;
     };
+  };
+
+  useEffect(() => {
+    return fetchResults(false);
   }, [searchTerm, selectedCategory]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -88,6 +101,16 @@ export const SearchPage: React.FC = () => {
               className="bg-brand-green hover:bg-brand-green-hover text-white text-xs font-bold px-6 py-2.5 rounded-xl transition-colors shadow-xs"
             >
               Search
+            </button>
+            <button
+              type="button"
+              onClick={() => fetchResults(true)}
+              disabled={refreshing}
+              className="bg-white border border-brand-green text-brand-green hover:bg-brand-green-light disabled:opacity-50 text-xs font-bold px-4 py-2.5 rounded-xl transition-colors shadow-xs flex items-center gap-1.5"
+              title="Force sync latest prices from platform connectors"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
+              <span className="hidden sm:inline">{refreshing ? "Syncing..." : "Live Refresh"}</span>
             </button>
           </form>
         </div>
