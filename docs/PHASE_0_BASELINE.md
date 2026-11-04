@@ -212,3 +212,4 @@ curl -s http://localhost:5001/api/sync/status | jq
 ```
 
 Open `http://localhost:5173` in a browser. Search for `Amul milk`, add items to the cart, run optimization, and proceed to the checklist handoff. Confirm all platform prices show `MOCK` and disclaimers are present.
+

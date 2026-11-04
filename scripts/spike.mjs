@@ -75,3 +75,4 @@ console.log(`Product JSON Visible: ${productJsonResponses.length > 0 ? "YES" : "
 
 await browser.close();
 console.log(`=== Completed Spike for ${platformName} ===\n`);
+

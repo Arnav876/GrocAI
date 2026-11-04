@@ -74,3 +74,4 @@
    Swiggy Instamart requires user session tokens or browser cookies that are only present in a genuine consumer browsing session.
 4. **Geolocation / Pincode is Mandatory:**
    Prices, stock availability, and delivery fees vary by dark-store serviceability. Live pricing requires passing user location parameters (latitude/longitude or pincode) to the gateway endpoints.
+

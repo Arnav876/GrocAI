@@ -67,3 +67,4 @@ Now that the data strategy is explicitly chosen with real evidence, Phase 1 will
 ### Epic 5: End-to-End Freshness & Optimization Validation
 - [ ] Verify that live synced observations show `live_verified` status when observed < 1 hour ago.
 - [ ] Verify that the optimizer calculates multi-store splits using real ingested prices.
+
