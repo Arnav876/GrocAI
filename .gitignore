@@ -34,3 +34,4 @@ coverage/
 .agents/hooks.json
 .cursor/hooks.json
 GroqAI
+.playwright-mcp/

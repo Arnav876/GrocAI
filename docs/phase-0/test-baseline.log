@@ -1,0 +1,132 @@
+
+> groqai-monorepo@1.0.0 test
+> npm run test --workspaces
+
+
+> @groqai/shared@1.0.0 test
+> vitest run
+
+
+ RUN  v1.6.1 /Users/arnavyadav/Project/GrocAI/packages/shared
+
+ ✓ src/freshness.test.ts  (3 tests) 1ms
+ ✓ src/unitNormalizer.test.ts  (5 tests) 2ms
+ ✓ src/money.test.ts  (4 tests) 23ms
+
+ Test Files  3 passed (3)
+      Tests  12 passed (12)
+   Start at  02:56:16
+   Duration  174ms (transform 114ms, setup 0ms, collect 128ms, tests 26ms, environment 0ms, prepare 119ms)
+
+
+> @groqai/web@1.0.0 test
+> vitest run
+
+
+ RUN  v1.6.1 /Users/arnavyadav/Project/GrocAI/apps/web
+
+ ✓ src/test/formatting.test.ts  (3 tests) 10ms
+ ✓ src/test/optimizationRender.test.tsx  (1 test) 15ms
+ ✓ src/test/unknownFee.test.tsx  (2 tests) 16ms
+ ✓ src/test/stalePrice.test.tsx  (1 test) 15ms
+
+ Test Files  4 passed (4)
+      Tests  7 passed (7)
+   Start at  02:56:17
+   Duration  658ms (transform 74ms, setup 218ms, collect 292ms, tests 56ms, environment 1.05s, prepare 505ms)
+
+
+> @groqai/api@1.0.0 test
+> vitest run
+
+
+ RUN  v1.6.1 /Users/arnavyadav/Project/GrocAI/apps/api
+
+ ✓ src/test/matching.test.ts  (7 tests) 2ms
+ ✓ src/test/optimizer.test.ts  (11 tests) 4ms
+ ✓ src/test/mappers.test.ts  (8 tests) 5ms
+stderr | src/test/connectorFailures.test.ts > Phase 3 Failure & Resilience Tests > gracefully falls back to mock/manual when authorized API fails
+[GroqAI Fallback] instamart authorized connector failed (Authorized API connector unconfigured: missing INSTAMART_API_BASE_URL). Falling back to manual/mock.
+
+ ✓ src/test/connectorFailures.test.ts  (4 tests) 38ms
+ ✓ src/test/connectors.contract.test.ts  (6 tests) 59ms
+ ✓ src/test/property.test.ts  (1 test) 4ms
+stderr | src/test/syncAndAdapters.test.ts > Real-Time Grocery Data Integration & Adapters > GrocerySyncService Resilient Cache & Sync Logic > never overwrites valid cached data with failed adapter responses
+[GroqAI Sync] Failed to refresh blinkit for product aashirvaad-atta-5kg: Platform blinkit service temporarily unavailable (503)
+
+stderr | src/test/syncAndAdapters.test.ts > Real-Time Grocery Data Integration & Adapters > GrocerySyncService Resilient Cache & Sync Logic > handles partial provider failures without failing entire comparison
+[GroqAI Sync] Failed to refresh zepto for product aashirvaad-atta-5kg: Connector timeout for zepto after 5000ms
+
+stdout | src/test/handoffAndKillSwitch.test.ts > Phase 3 Handoff Integrity, Kill Switches & Admin Controls > POST /api/shopping-handoff falls back to links_and_checklist when cart creation is unsupported, never claiming false success
+{"timestamp":"2026-11-04T21:26:18.334Z","method":"POST","path":"/api/optimizations","status":201,"durationMs":16,"ip":"127.0.0.1"}
+
+stdout | src/test/api.test.ts > API Endpoint Integration Tests > GET /api/health returns healthy status and platform killswitch states
+{"timestamp":"2026-11-04T21:26:18.334Z","method":"GET","path":"/api/health","status":200,"durationMs":1,"ip":"127.0.0.1"}
+
+stdout | src/test/handoffAndKillSwitch.test.ts > Phase 3 Handoff Integrity, Kill Switches & Admin Controls > POST /api/shopping-handoff falls back to links_and_checklist when cart creation is unsupported, never claiming false success
+{"timestamp":"2026-11-04T21:26:18.339Z","method":"POST","path":"/api/shopping-handoff","status":200,"durationMs":1,"ip":"127.0.0.1"}
+
+stdout | src/test/handoffAndKillSwitch.test.ts > Phase 3 Handoff Integrity, Kill Switches & Admin Controls > admin kill-switch endpoint immediately disables a connector and updates platform health
+[GroqAI Registry] Platform blinkit kill switch set to: ACTIVE (Disabled)
+{"timestamp":"2026-11-04T21:26:18.341Z","method":"POST","path":"/api/admin/platforms/blinkit/kill-switch","status":200,"durationMs":0,"ip":"127.0.0.1"}
+
+stdout | src/test/handoffAndKillSwitch.test.ts > Phase 3 Handoff Integrity, Kill Switches & Admin Controls > admin kill-switch endpoint immediately disables a connector and updates platform health
+{"timestamp":"2026-11-04T21:26:18.342Z","method":"GET","path":"/api/platforms","status":200,"durationMs":1,"ip":"127.0.0.1"}
+
+stdout | src/test/api.test.ts > API Endpoint Integration Tests > GET /api/categories returns seeded categories
+{"timestamp":"2026-11-04T21:26:18.345Z","method":"GET","path":"/api/categories","status":200,"durationMs":7,"ip":"127.0.0.1"}
+
+stdout | src/test/handoffAndKillSwitch.test.ts > Phase 3 Handoff Integrity, Kill Switches & Admin Controls > admin kill-switch endpoint immediately disables a connector and updates platform health
+{"timestamp":"2026-11-04T21:26:18.346Z","method":"GET","path":"/api/connectors/health","status":200,"durationMs":4,"ip":"127.0.0.1"}
+
+stdout | src/test/handoffAndKillSwitch.test.ts > Phase 3 Handoff Integrity, Kill Switches & Admin Controls > admin kill-switch endpoint immediately disables a connector and updates platform health
+[GroqAI Registry] Platform blinkit kill switch set to: Inactive (Enabled)
+{"timestamp":"2026-11-04T21:26:18.347Z","method":"DELETE","path":"/api/admin/platforms/blinkit/kill-switch","status":200,"durationMs":0,"ip":"127.0.0.1"}
+
+stdout | src/test/handoffAndKillSwitch.test.ts > Phase 3 Handoff Integrity, Kill Switches & Admin Controls > admin kill-switch endpoint immediately disables a connector and updates platform health
+{"timestamp":"2026-11-04T21:26:18.348Z","method":"GET","path":"/api/platforms","status":200,"durationMs":1,"ip":"127.0.0.1"}
+
+stdout | src/test/api.test.ts > API Endpoint Integration Tests > GET /api/products/search finds matching products across platforms
+{"timestamp":"2026-11-04T21:26:18.349Z","method":"GET","path":"/api/products/search","status":200,"durationMs":3,"ip":"127.0.0.1"}
+
+stdout | src/test/handoffAndKillSwitch.test.ts > Phase 3 Handoff Integrity, Kill Switches & Admin Controls > admin mode endpoint switches connector integration mode at runtime
+{"timestamp":"2026-11-04T21:26:18.348Z","method":"POST","path":"/api/admin/platforms/zepto/mode","status":200,"durationMs":0,"ip":"127.0.0.1"}
+{"timestamp":"2026-11-04T21:26:18.349Z","method":"GET","path":"/api/platforms","status":200,"durationMs":0,"ip":"127.0.0.1"}
+{"timestamp":"2026-11-04T21:26:18.350Z","method":"POST","path":"/api/admin/platforms/zepto/mode","status":200,"durationMs":0,"ip":"127.0.0.1"}
+
+stdout | src/test/syncAndAdapters.test.ts > Real-Time Grocery Data Integration & Adapters > API Endpoints for Real-Time Sync & Freshness > POST /api/products/:id/refresh triggers live sync and returns updated product with syncResult
+{"timestamp":"2026-11-04T21:26:18.350Z","method":"POST","path":"/api/products/aashirvaad-atta-5kg/refresh","status":200,"durationMs":5,"ip":"127.0.0.1"}
+
+stdout | src/test/handoffAndKillSwitch.test.ts > Phase 3 Handoff Integrity, Kill Switches & Admin Controls > rejects invalid platform modes with HTTP 400
+{"timestamp":"2026-11-04T21:26:18.351Z","method":"POST","path":"/api/admin/platforms/zepto/mode","status":400,"durationMs":0,"ip":"127.0.0.1"}
+
+stdout | src/test/syncAndAdapters.test.ts > Real-Time Grocery Data Integration & Adapters > API Endpoints for Real-Time Sync & Freshness > POST /api/products/sync batch-synchronizes products
+{"timestamp":"2026-11-04T21:26:18.355Z","method":"POST","path":"/api/products/sync","status":200,"durationMs":1,"ip":"127.0.0.1"}
+
+ ✓ src/test/handoffAndKillSwitch.test.ts  (4 tests) 64ms
+stdout | src/test/syncAndAdapters.test.ts > Real-Time Grocery Data Integration & Adapters > API Endpoints for Real-Time Sync & Freshness > GET /api/sync/status reports adapter telemetry and cache freshness counts
+{"timestamp":"2026-11-04T21:26:18.358Z","method":"GET","path":"/api/sync/status","status":200,"durationMs":2,"ip":"127.0.0.1"}
+
+stdout | src/test/api.test.ts > API Endpoint Integration Tests > POST /api/optimizations calculates 3 strategies and returns valid response
+{"timestamp":"2026-11-04T21:26:18.360Z","method":"POST","path":"/api/optimizations","status":201,"durationMs":7,"ip":"127.0.0.1"}
+
+stdout | src/test/api.test.ts > API Endpoint Integration Tests > POST /api/optimizations calculates 3 strategies and returns valid response
+{"timestamp":"2026-11-04T21:26:18.362Z","method":"GET","path":"/api/optimizations/opt-1793827578359-lg4k7","status":200,"durationMs":1,"ip":"127.0.0.1"}
+
+stdout | src/test/syncAndAdapters.test.ts > Real-Time Grocery Data Integration & Adapters > API Endpoints for Real-Time Sync & Freshness > GET /api/products/search returns normalized unit prices and verification statuses
+{"timestamp":"2026-11-04T21:26:18.361Z","method":"GET","path":"/api/products/search","status":200,"durationMs":1,"ip":"127.0.0.1"}
+
+stdout | src/test/api.test.ts > API Endpoint Integration Tests > POST /api/optimizations calculates 3 strategies and returns valid response
+{"timestamp":"2026-11-04T21:26:18.364Z","method":"POST","path":"/api/shopping-handoff","status":200,"durationMs":1,"ip":"127.0.0.1"}
+
+stdout | src/test/api.test.ts > API Endpoint Integration Tests > GET /api/platforms returns honest capabilities without simulating fake cart creation
+{"timestamp":"2026-11-04T21:26:18.365Z","method":"GET","path":"/api/platforms","status":200,"durationMs":0,"ip":"127.0.0.1"}
+
+ ✓ src/test/syncAndAdapters.test.ts  (10 tests) 77ms
+ ✓ src/test/api.test.ts  (5 tests) 55ms
+
+ Test Files  9 passed (9)
+      Tests  56 passed (56)
+   Start at  02:56:17
+   Duration  422ms (transform 326ms, setup 0ms, collect 955ms, tests 308ms, environment 1ms, prepare 479ms)
+

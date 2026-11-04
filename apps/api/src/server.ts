@@ -120,11 +120,22 @@ export function createServer(prisma: PrismaClient) {
         whereClause.categoryId = category;
       }
       if (query) {
-        whereClause.OR = [
-          { name: { contains: query, mode: "insensitive" } },
-          { brand: { contains: query, mode: "insensitive" } },
-          { variant: { contains: query, mode: "insensitive" } },
-        ];
+        const words = query.trim().split(/\s+/).filter(Boolean);
+        if (words.length === 1) {
+          whereClause.OR = [
+            { name: { contains: words[0], mode: "insensitive" } },
+            { brand: { contains: words[0], mode: "insensitive" } },
+            { variant: { contains: words[0], mode: "insensitive" } },
+          ];
+        } else if (words.length > 1) {
+          whereClause.AND = words.map((w) => ({
+            OR: [
+              { name: { contains: w, mode: "insensitive" } },
+              { brand: { contains: w, mode: "insensitive" } },
+              { variant: { contains: w, mode: "insensitive" } },
+            ],
+          }));
+        }
       }
 
       const products = await prisma.product.findMany({

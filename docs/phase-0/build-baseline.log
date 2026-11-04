@@ -1,0 +1,25 @@
+
+> groqai-monorepo@1.0.0 build
+> npm run build --workspace=packages/shared && npm run build --workspace=apps/web && npm run build --workspace=apps/api
+
+
+> @groqai/shared@1.0.0 build
+> tsc -p tsconfig.build.json
+
+
+> @groqai/web@1.0.0 build
+> tsc && vite build
+
+vite v5.4.21 building for production...
+transforming...
+✓ 1593 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   1.60 kB │ gzip:   0.90 kB
+dist/assets/index-8U6dLpDI.css   37.00 kB │ gzip:   7.06 kB
+dist/assets/index-CqUundLC.js   450.83 kB │ gzip: 117.15 kB
+✓ built in 970ms
+
+> @groqai/api@1.0.0 build
+> tsc -p tsconfig.build.json
+
