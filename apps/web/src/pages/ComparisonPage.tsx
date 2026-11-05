@@ -37,8 +37,43 @@ export const ComparisonPage: React.FC = () => {
     try {
       const res = await apiClient.refreshProduct(product.id, pincode);
       setProduct(res.product);
-      setRefreshMessage({ text: "Live prices and stock verified from platform adapters." });
-      setAllProducts((prev) => prev.map((p) => (p.id === res.product.id ? res.product : p)));
+
+      if (res.refresh.status === "cached" || res.refresh.jobIds.length === 0) {
+        setRefreshMessage({ text: res.refresh.message || "No live refresh was queued; showing cached prices." });
+        return;
+      }
+
+      setRefreshMessage({
+        text: `Queued live refresh on ${res.refresh.platforms.join(", ")}. Waiting for the ingestion worker...`,
+      });
+
+      const outcome = await apiClient.waitForIngestionJobs(res.refresh.jobIds);
+      const refreshed = await apiClient.getProductById(product.id, false, pincode);
+      if (refreshed) {
+        setProduct(refreshed);
+        setAllProducts((prev) => prev.map((p) => (p.id === refreshed.id ? refreshed : p)));
+      }
+
+      if (outcome.completed.length > 0) {
+        setRefreshMessage({
+          text: `Live prices and stock refreshed from ${outcome.completed.length} platform job(s).`,
+        });
+      } else if (outcome.blocked.length > 0) {
+        setRefreshMessage({
+          text: "Platforms blocked automated capture (rate limit or login wall). Verified cached prices were kept.",
+          isError: true,
+        });
+      } else if (outcome.failed.length > 0) {
+        setRefreshMessage({
+          text: "Live refresh failed. Verified cached prices were kept unchanged.",
+          isError: true,
+        });
+      } else {
+        setRefreshMessage({
+          text: "Refresh is still queued (no worker picked it up yet). Showing cached prices.",
+          isError: true,
+        });
+      }
     } catch (err: any) {
       setRefreshMessage({
         text: `Sync error (${err.message}). Kept verified cached data without overwriting.`,

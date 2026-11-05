@@ -70,11 +70,32 @@ export class GroqApiClient {
     return res.json();
   }
 
-  async refreshProduct(id: string, pincode?: string): Promise<{ product: ProductSummary; syncResult: any }> {
+  async refreshProduct(
+    id: string,
+    pincode?: string
+  ): Promise<{
+    product: ProductSummary;
+    refresh: {
+      status: string;
+      jobIds: string[];
+      platforms: string[];
+      queries: string[];
+      message: string;
+    };
+  }> {
     if (this.isUsingMock()) {
       const prod = await mockApiService.getProductById(id);
       if (!prod) throw new Error("Product not found");
-      return { product: prod, syncResult: { status: "cached" } };
+      return {
+        product: prod,
+        refresh: {
+          status: "cached",
+          jobIds: [],
+          platforms: [],
+          queries: [],
+          message: "Mock mode: no live refresh queued",
+        },
+      };
     }
     const res = await fetch(`${API_BASE_URL}/api/products/${encodeURIComponent(id)}/refresh`, {
       method: "POST",
@@ -83,6 +104,54 @@ export class GroqApiClient {
     });
     if (!res.ok) throw new Error(`Failed to refresh product prices: ${res.statusText}`);
     return res.json();
+  }
+
+  /**
+   * Polls ingestion jobs until they reach a terminal state or the timeout
+   * expires. Never claims success for jobs that are still queued.
+   */
+  async waitForIngestionJobs(
+    jobIds: string[],
+    timeoutMs: number = 90000
+  ): Promise<{
+    completed: string[];
+    failed: string[];
+    blocked: string[];
+    pending: string[];
+  }> {
+    if (this.isUsingMock()) {
+      return { completed: jobIds, failed: [], blocked: [], pending: [] };
+    }
+
+    const statuses = new Map<string, string>();
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
+      let allTerminal = true;
+      for (const jobId of jobIds) {
+        if (statuses.has(jobId)) continue;
+        try {
+          const job = await this.getIngestionJob(jobId);
+          if (["completed", "failed", "blocked"].includes(job.status)) {
+            statuses.set(jobId, job.status);
+          } else {
+            allTerminal = false;
+          }
+        } catch {
+          allTerminal = false;
+        }
+      }
+      if (allTerminal) break;
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+    }
+
+    const byStatus = (status: string) => jobIds.filter((id) => statuses.get(id) === status);
+    return {
+      completed: byStatus("completed"),
+      failed: byStatus("failed"),
+      blocked: byStatus("blocked"),
+      pending: jobIds.filter((id) => !statuses.has(id)),
+    };
   }
 
   async syncProducts(

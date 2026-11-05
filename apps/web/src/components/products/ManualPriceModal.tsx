@@ -191,3 +191,4 @@ export const ManualPriceModal: React.FC<ManualPriceModalProps> = ({
     </div>
   );
 };
+

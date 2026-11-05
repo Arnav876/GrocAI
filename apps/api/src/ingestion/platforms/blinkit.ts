@@ -94,3 +94,4 @@ export class BlinkitScraper implements PlatformScraper {
 }
 
 export const blinkitScraper = new BlinkitScraper();
+

@@ -9,8 +9,15 @@ export interface ScrapeContext {
 
 export interface PlatformScraper {
   platform: PlatformId;
+  /** Canonical search URL stored on observations for provenance. */
   buildSearchUrl(query: string, loc: LocationContext): string;
+  /** URL the browser should open. Defaults to buildSearchUrl when omitted. */
+  getNavigationUrl?(query: string, loc: LocationContext): string;
   matchesResponse(url: string): boolean;
+  /** Optional stricter filter for the response we actually wait for. */
+  responseFilter?(url: string): boolean;
+  /** Optional UI interaction needed to trigger search (e.g. type + Enter). */
+  interact?(page: any, ctx: ScrapeContext): Promise<void>;
   parse(payload: unknown, ctx: ScrapeContext): RawObservation[];
   extractFromDom?(page: any, ctx: ScrapeContext): Promise<RawObservation[]>;
 }
@@ -26,3 +33,4 @@ export interface ChallengeDetectionResult {
   reason?: string;
   statusCode?: number;
 }
+

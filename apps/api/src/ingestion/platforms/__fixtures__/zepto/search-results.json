@@ -1,0 +1,74 @@
+{
+  "layout": [
+    {
+      "widgetId": "TITLE_WIDGET",
+      "widgetName": "SEARCH_TITLE_WIDGET",
+      "data": {
+        "resolver": {
+          "data": {
+            "title": "Showing results for \"amul taaza milk\""
+          }
+        }
+      }
+    },
+    {
+      "widgetId": "PRODUCT_GRID",
+      "widgetName": "PRODUCT_GRID",
+      "data": {
+        "resolver": {
+          "type": "product_grid",
+          "data": {
+            "items": [
+              {
+                "id": "6aa4c577-ebeb-4647-bb58-dcb9b07541ac",
+                "productId": "8d7e1c1a-0c72-4f8b-8b1f-2b0f5b0b7f11",
+                "sellingPrice": 7700,
+                "discountedSellingPrice": 7700,
+                "mrp": 8000,
+                "discountPercent": 4,
+                "availableQuantity": 12,
+                "isActive": true,
+                "product": {
+                  "name": "Amul Taaza Homogenised Toned Milk (Tetra Pack)",
+                  "brand": "Amul"
+                },
+                "productVariant": {
+                  "id": "6aa4c577-ebeb-4647-bb58-dcb9b07541ac",
+                  "formattedPacksize": "1 pack (1 L)",
+                  "mrp": 8000,
+                  "images": [
+                    {
+                      "path": "cms/product_variant/6aa4c577-ebeb-4647-bb58-dcb9b07541ac/Amul-Taaza-Homogenised-Toned-Milk-Tetra-Pack-.jpeg"
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "74226ac6-b295-4a42-89d3-93ad2d2c14c8",
+                "productId": "2d1a8a88-8f0a-4a1e-9f2c-0b0b2c8e4f22",
+                "sellingPrice": 3000,
+                "mrp": 3200,
+                "availableQuantity": 0,
+                "isActive": true,
+                "product": {
+                  "name": "Amul Moti Toned Milk | 90 Days Shelf life",
+                  "brand": "Amul"
+                },
+                "productVariant": {
+                  "id": "74226ac6-b295-4a42-89d3-93ad2d2c14c8",
+                  "formattedPacksize": "1 pack (450 ml)",
+                  "mrp": 3200,
+                  "images": [
+                    {
+                      "path": "cms/product_variant/74226ac6-b295-4a42-89d3-93ad2d2c14c8/Amul-Moti-Toned-Milk.jpeg"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

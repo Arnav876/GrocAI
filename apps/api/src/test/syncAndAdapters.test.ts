@@ -21,6 +21,7 @@ describe("Real-Time Grocery Data Integration & Adapters", () => {
   let registry: ConnectorRegistry;
   let syncService: GrocerySyncService;
   let app: any;
+  const refreshJobIds: string[] = [];
 
   beforeAll(() => {
     prisma = new PrismaClient();
@@ -33,6 +34,9 @@ describe("Real-Time Grocery Data Integration & Adapters", () => {
   });
 
   afterAll(async () => {
+    if (refreshJobIds.length > 0) {
+      await prisma.scrapeJob.deleteMany({ where: { id: { in: refreshJobIds } } }).catch(() => {});
+    }
     await prisma.$disconnect();
   });
 
@@ -171,7 +175,7 @@ describe("Real-Time Grocery Data Integration & Adapters", () => {
   });
 
   describe("API Endpoints for Real-Time Sync & Freshness", () => {
-    it("POST /api/products/:id/refresh triggers live sync and returns updated product with syncResult", async () => {
+    it("POST /api/products/:id/refresh queues live ingestion jobs instead of faking a sync", async () => {
       const products = await prisma.product.findMany({ take: 1 });
       const target = products[0];
 
@@ -180,11 +184,19 @@ describe("Real-Time Grocery Data Integration & Adapters", () => {
         .send({ pincode: "110001" });
 
       expect(res.status).toBe(200);
+      expect(res.headers["x-ingestion-status"]).toBe("queued");
       expect(res.body).toHaveProperty("product");
-      expect(res.body).toHaveProperty("syncResult");
       expect(res.body.product.id).toBe(target.id);
       expect(res.body.product).toHaveProperty("normalizedUnitPrice");
-      expect(res.body.syncResult.refreshedPlatforms.length).toBeGreaterThan(0);
+
+      // The endpoint must be honest: it returns a queued refresh, never a
+      // synchronous syncResult that pretends live prices were verified.
+      expect(res.body).not.toHaveProperty("syncResult");
+      expect(res.body.refresh.status).toBe("queued");
+      expect(res.body.refresh.platforms).toEqual(["blinkit", "zepto", "bigbasket"]);
+      expect(res.body.refresh.queries).toEqual([target.name]);
+      expect(res.body.refresh.jobIds).toHaveLength(3);
+      refreshJobIds.push(...res.body.refresh.jobIds);
     });
 
     it("POST /api/products/sync batch-synchronizes products", async () => {

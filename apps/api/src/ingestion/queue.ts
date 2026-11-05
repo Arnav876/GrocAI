@@ -148,3 +148,4 @@ export class PostgresScrapeQueue {
     return stats;
   }
 }
+

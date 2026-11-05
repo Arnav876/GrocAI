@@ -58,23 +58,28 @@ This document describes the intercepted endpoints, raw JSON payloads, request he
 ## 3. Zepto (KiranaKart Quick Commerce)
 
 - **Platform ID:** `zepto`
-- **Method / Engine:** Dual-mode parser: API JSON interception fallback + DOM card extraction
-- **Live Search URL:** `https://www.zepto.com/search?q=<query>`
+- **Method / Engine:** Headed Chromium UI interaction + BFF JSON interception, with DOM card extraction fallback
+- **Canonical Search URL (provenance):** `https://www.zepto.com/search?query=<query>`
+- **Browser Navigation URL:** `https://www.zepto.com/search` (then type into the visible search box)
 - **Intercepted Endpoint:**
-  - URL Pattern: `/api/v2/search` or `/v1/search`
-  - Protocol: HTTPS JSON or SSR rendered HTML
-- **Top 5 Fields Used:**
-  1. `item.productName` or DOM `data-testid="product-card-name"` -> `rawTitle`
-  2. `item.brand` or title prefix extraction -> `brand`
-  3. `item.formattedPacksize` or DOM `data-testid="product-card-quantity"` -> `packSize`
-  4. `item.sellingPrice` or DOM price text -> `pricePaise`
-  5. `item.mrp` or DOM strikethrough price -> `originalPricePaise`
-  6. `item.images[0].url` -> `imageUrl`
-  7. `item.outOfStock` -> `availability`
+  - URL Pattern: `https://bff-gateway.zepto.com/search-federator-service/api/v1/search?query=<query>&mode=<MODE>&pageNumber=<n>`
+  - Product results are served by `mode=SHOW_ALL_RESULTS`; `mode=TYPED` and `mode=AUTOSUGGEST` are suggestion-dropdown responses only.
+  - `content-type` must be JSON. The old parser incorrectly matched the HTML `/search` document; it now only matches the BFF endpoint.
+- **Top Fields Used:**
+  1. `product.name` (or DOM `[data-slot-id="ProductName"]`) -> `rawTitle`
+  2. `product.brand` -> `brand`
+  3. `productVariant.formattedPacksize` (or DOM `[data-slot-id="PackSize"]`) -> `packSize`
+  4. `sellingPrice` / `discountedSellingPrice` (integer paise) -> `pricePaise`
+  5. `mrp` (integer paise) -> `originalPricePaise`
+  6. `productVariant.images[].path` -> `imageUrl` (`https://cdn.zeptonow.com/production/<path>`)
+  7. `availableQuantity === 0` / `isActive === false` -> `availability: "unavailable"`
 - **Quirks & Handling:**
-  - Zepto frequently relies on server-rendered React components and hydration chunks.
-  - When JSON interception does not catch a separate XHR, `ZeptoScraper.extractFromDom(page)` scans DOM elements containing `data-testid="product-card"`.
-  - Anti-bot / rate-limit challenge detection triggers immediate pause and backs off; never injects stealth cloaking scripts.
+  - Direct navigation to `?query=` is login-gated for guests. The working flow is `/search` -> click the search input -> type with real keyboard events -> click "Show all results for ..." (or press Enter).
+  - Programmatic `fill()` / value setters do not reliably trigger React's autosuggest request; `page.keyboard.type()` does.
+  - The BFF returns numeric prices in paise (`sellingPrice: 20200` = ₹202), unlike DOM strings (`₹202`). Numeric values are therefore treated as paise, string values as rupees.
+  - Guest search is tightly rate-limited per IP/session: roughly one successful search before HTTP 429 / "Oops! Please login to continue searching". The worker records a blocked run and backs off; it never attempts login, CAPTCHA solving, or evasion.
+  - When JSON interception is unavailable, `ZeptoScraper.extractFromDom(page)` scans `[data-testid="product-card"]` cards using `ProductName`, `PackSize`, and `EdlpPrice` slots.
+  - Profile location is set to Connaught Place, Delhi 110001 via `user-position` localStorage plus `latitude`/`longitude` cookies; the worker also requests Delhi geolocation.
 
 ---
 
@@ -90,3 +95,4 @@ This document describes the intercepted endpoints, raw JSON payloads, request he
   - `POST /api/observations/manual`
   - Accepts `title`, `platform: "instamart"`, `priceRupees`, `mrpRupees`, `packSize`, `pincode`, and `notes`.
   - Automatically matches catalog products using `defaultMatcher` and stores verified `PriceObservation` records.
+

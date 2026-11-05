@@ -76,3 +76,4 @@ if (capturedJson) {
 } else {
   console.warn(`[Capture] No matching JSON endpoint was intercepted for ${platform}.`);
 }
+

@@ -34,6 +34,27 @@ export function createServer(prisma: PrismaClient) {
   const scrapeQueue = new PostgresScrapeQueue(prisma);
   const nlParser = createNLParser();
 
+  // Live refresh is handled by the ingestion queue/worker. Instamart is
+  // intentionally excluded because it is manual/assisted capture only.
+  const INGESTION_PLATFORMS: PlatformId[] = ["blinkit", "zepto", "bigbasket"];
+
+  async function enqueueProductRefresh(
+    queries: string[],
+    locationKey: string
+  ): Promise<string[]> {
+    const jobIds: string[] = [];
+    for (const platform of INGESTION_PLATFORMS) {
+      const jobId = await scrapeQueue.enqueue({
+        platform,
+        queries,
+        locationKey,
+        priority: 5,
+      });
+      jobIds.push(jobId);
+    }
+    return jobIds;
+  }
+
   // Security Headers
   app.use(helmet());
 
@@ -225,15 +246,16 @@ export function createServer(prisma: PrismaClient) {
       const locationKey = `delhi_${pincode}`;
 
       if (forceRefresh && products.length > 0) {
-        const topToSync = products.slice(0, 5);
-        await Promise.allSettled(
-          topToSync.map((p) => syncService.syncProduct(p.id, locationKey, { forceRefresh: true }))
-        );
-        const refreshedProducts = await prisma.product.findMany({
-          where: whereClause,
-          include: { listings: true },
-        });
-        return res.json(refreshedProducts.map(formatProductSummary));
+        // Enqueue real ingestion jobs instead of calling the legacy mock
+        // connectors. The current cached rows are returned immediately; the
+        // client can poll /api/ingestion/jobs/:id for completion.
+        const refreshQueries = query
+          ? [query]
+          : products.slice(0, 5).map((p) => p.name);
+        const jobIds = await enqueueProductRefresh(refreshQueries, locationKey);
+        res.setHeader("X-Ingestion-Job-Ids", jobIds.join(","));
+        res.setHeader("X-Ingestion-Status", "queued");
+        return res.json(products.map(formatProductSummary));
       }
 
       res.json(products.map(formatProductSummary));
@@ -250,10 +272,6 @@ export function createServer(prisma: PrismaClient) {
       const pincode = (req.query.pincode as string) || "110001";
       const locationKey = `delhi_${pincode}`;
 
-      if (forceRefresh) {
-        await syncService.syncProduct(id, locationKey, { forceRefresh: true });
-      }
-
       const prod = await prisma.product.findUnique({
         where: { id },
         include: { listings: true },
@@ -261,6 +279,12 @@ export function createServer(prisma: PrismaClient) {
 
       if (!prod) {
         return res.status(404).json({ error: "Product not found" });
+      }
+
+      if (forceRefresh) {
+        const jobIds = await enqueueProductRefresh([prod.name], locationKey);
+        res.setHeader("X-Ingestion-Job-Ids", jobIds.join(","));
+        res.setHeader("X-Ingestion-Status", "queued");
       }
 
       let lowestPricePaise = Infinity;
@@ -343,8 +367,6 @@ export function createServer(prisma: PrismaClient) {
       const pincode = req.body?.pincode || (req.query.pincode as string) || "110001";
       const locationKey = `delhi_${pincode}`;
 
-      const syncResult = await syncService.syncProduct(id, locationKey, { forceRefresh: true });
-
       const prod = await prisma.product.findUnique({
         where: { id },
         include: { listings: true },
@@ -353,6 +375,10 @@ export function createServer(prisma: PrismaClient) {
       if (!prod) {
         return res.status(404).json({ error: "Product not found" });
       }
+
+      const jobIds = await enqueueProductRefresh([prod.name], locationKey);
+      res.setHeader("X-Ingestion-Job-Ids", jobIds.join(","));
+      res.setHeader("X-Ingestion-Status", "queued");
 
       let lowestPricePaise = Infinity;
       let lowestPlatform: PlatformId = "blinkit";
@@ -423,7 +449,13 @@ export function createServer(prisma: PrismaClient) {
           isNew: prod.isNew,
           platformPrices,
         },
-        syncResult,
+        refresh: {
+          status: "queued",
+          jobIds,
+          platforms: INGESTION_PLATFORMS,
+          queries: [prod.name],
+          message: `Queued live refresh for ${INGESTION_PLATFORMS.join(", ")}`,
+        },
       });
     } catch (err) {
       next(err);

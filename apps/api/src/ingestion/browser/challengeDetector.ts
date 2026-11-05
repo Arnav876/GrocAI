@@ -28,12 +28,28 @@ export async function detectChallenge(
     };
   }
 
+  // HTTP 202 is ambiguous: some platforms return it transiently before
+  // serving the real page, while a true interstitial usually contains an
+  // explicit challenge signal. Only treat it as blocked when that signal is
+  // present; the browser manager also blocks 202 runs that yield no data.
   if (statusCode === 202) {
-    return {
-      isBlocked: true,
-      statusCode: 202,
-      reason: `HTTP 202 Interstitial: platform presented challenge token gate`,
-    };
+    const signalText = `${title || ""} ${bodyText || ""}`.toLowerCase();
+    const hasChallengeSignal = [
+      "captcha",
+      "challenge",
+      "verify you are human",
+      "access denied",
+      "just a moment",
+      "security check",
+    ].some((kw) => signalText.includes(kw));
+
+    if (hasChallengeSignal) {
+      return {
+        isBlocked: true,
+        statusCode: 202,
+        reason: `HTTP 202 Interstitial: platform presented challenge token gate`,
+      };
+    }
   }
 
   if (statusCode === 429) {
@@ -68,3 +84,4 @@ export async function detectChallenge(
 
   return { isBlocked: false, statusCode };
 }
+

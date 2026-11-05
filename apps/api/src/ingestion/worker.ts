@@ -26,6 +26,16 @@ export class IngestionWorker {
     // Recover any jobs that got stuck if previous process crashed
     await this.queue.recoverStuckJobs(120000);
 
+    // Remove live listings created before the 0.7 confidence guard. These are
+    // legacy fuzzy matches (e.g. a buffalo-milk listing attached to a cow-milk
+    // product) and must never be presented as verified prices.
+    await this.prisma.platformListing.deleteMany({
+      where: {
+        sourceType: { in: ["permitted_page", "authorized_api", "partner_feed"] },
+        confidence: { lt: 0.7 },
+      },
+    });
+
     const job = await this.queue.claimNext(this.workerId);
     if (!job) {
       return false;
@@ -112,7 +122,12 @@ export class IngestionWorker {
 
           for (const cand of allCatalogProducts) {
             const m = defaultMatcher.match(
-              { query: raw.title, variant: raw.variant, packSize: raw.packSize },
+              {
+                query: raw.title,
+                brand: raw.brand,
+                variant: raw.variant,
+                packSize: raw.packSize,
+              },
               {
                 id: cand.id,
                 name: cand.name,
@@ -122,7 +137,10 @@ export class IngestionWorker {
               }
             );
 
-            if (m.isMatch && m.confidence > bestConfidence) {
+            // High-confidence threshold: an unmatched price is safer than a
+            // wrong-product match. Brand + pack size guards are enforced by
+            // the matcher when those fields are present.
+            if (m.isMatch && m.confidence >= 0.7 && m.confidence > bestConfidence) {
               bestConfidence = m.confidence;
               matchedCatalogProd = cand;
             }
@@ -133,7 +151,7 @@ export class IngestionWorker {
             scrapeRunId: run.id,
             sourceType: "permitted_page",
             verificationStatus: "live_verified",
-            confidence: bestConfidence > 0 ? bestConfidence : 1.0,
+            confidence: matchedCatalogProd ? bestConfidence : 0,
           });
 
           // Persist PriceObservation to DB
@@ -310,3 +328,4 @@ if (process.argv[1]?.endsWith("worker.ts") || process.argv[1]?.endsWith("worker.
     });
   }
 }
+

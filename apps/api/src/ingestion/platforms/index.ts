@@ -21,3 +21,4 @@ export function getPlatformScraper(platform: PlatformId): PlatformScraper {
   }
   return scraper;
 }
+

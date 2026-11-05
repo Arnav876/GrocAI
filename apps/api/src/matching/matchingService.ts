@@ -47,6 +47,8 @@ export class AIMatcherStub implements IAIMatcher {
 const CONFLICTING_VARIANT_PAIRS: [RegExp, RegExp][] = [
   [/toned/i, /full\s*cream|gold/i],
   [/cow/i, /buffalo/i],
+  // Cow milk is a distinct product from Taaza/Toned/Gold/A2 variants.
+  [/\bcow\b/i, /\b(taaza|toned|gold|a2)\b/i],
   [/brown/i, /white/i],
   [/skimmed/i, /whole/i],
   [/unpolished/i, /polished/i],

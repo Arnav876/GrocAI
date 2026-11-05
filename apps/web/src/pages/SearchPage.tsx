@@ -20,6 +20,7 @@ export const SearchPage: React.FC = () => {
   const [products, setProducts] = useState<ProductSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshNotice, setRefreshNotice] = useState<{ text: string; isError?: boolean } | null>(null);
   const [isManualModalOpen, setIsManualModalOpen] = useState(false);
   const { pincode } = useBasket();
 
@@ -28,25 +29,22 @@ export const SearchPage: React.FC = () => {
     setSelectedCategory(categoryParam);
   }, [queryParam, categoryParam]);
 
-  const fetchResults = (forceRefresh: boolean = false) => {
+  const fetchResults = () => {
     let mounted = true;
-    if (forceRefresh) setRefreshing(true);
-    else setLoading(true);
+    setLoading(true);
 
     apiClient
-      .searchProducts(searchTerm, selectedCategory, forceRefresh, pincode)
+      .searchProducts(searchTerm, selectedCategory, false, pincode)
       .then((data) => {
         if (mounted) {
           setProducts(data);
           setLoading(false);
-          setRefreshing(false);
         }
       })
       .catch((err) => {
         console.error("Search failed:", err);
         if (mounted) {
           setLoading(false);
-          setRefreshing(false);
         }
       });
 
@@ -56,8 +54,60 @@ export const SearchPage: React.FC = () => {
   };
 
   useEffect(() => {
-    return fetchResults(false);
+    return fetchResults();
   }, [searchTerm, selectedCategory]);
+
+  /**
+   * Live refresh is asynchronous: enqueue real ingestion jobs, wait for the
+   * worker to finish, then re-read the catalog. We never claim fresh prices
+   * when the jobs are still pending or blocked.
+   */
+  const handleLiveRefresh = async () => {
+    if (refreshing) return;
+
+    const queries = searchTerm
+      ? [searchTerm]
+      : products.slice(0, 5).map((p) => p.name);
+    if (queries.length === 0) {
+      setRefreshNotice({ text: "Search for a product before requesting a live refresh.", isError: true });
+      return;
+    }
+
+    setRefreshing(true);
+    setRefreshNotice({ text: `Queued live refresh for ${queries.length} search${queries.length > 1 ? "es" : ""}...` });
+
+    try {
+      const enqueued = await apiClient.enqueueRefresh(queries, ["blinkit", "zepto", "bigbasket"], `delhi_${pincode}`);
+      const outcome = await apiClient.waitForIngestionJobs(enqueued.jobIds);
+
+      setProducts(await apiClient.searchProducts(searchTerm, selectedCategory, false, pincode));
+
+      if (outcome.completed.length > 0) {
+        setRefreshNotice({
+          text: `Live refresh completed on ${outcome.completed.length} job${outcome.completed.length > 1 ? "s" : ""}. Prices below reflect the latest verified observations.`,
+        });
+      } else if (outcome.blocked.length > 0) {
+        setRefreshNotice({
+          text: "Platforms blocked automated capture (rate limit or login wall). Cached prices were kept unchanged.",
+          isError: true,
+        });
+      } else if (outcome.failed.length > 0) {
+        setRefreshNotice({
+          text: "Live refresh failed. Cached prices were kept unchanged.",
+          isError: true,
+        });
+      } else {
+        setRefreshNotice({
+          text: "Refresh is still queued (no worker picked it up yet). Showing cached prices.",
+          isError: true,
+        });
+      }
+    } catch (err: any) {
+      setRefreshNotice({ text: `Refresh error: ${err.message}. Cached prices were kept.`, isError: true });
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -106,13 +156,13 @@ export const SearchPage: React.FC = () => {
             </button>
             <button
               type="button"
-              onClick={() => fetchResults(true)}
+              onClick={handleLiveRefresh}
               disabled={refreshing}
               className="bg-white border border-brand-green text-brand-green hover:bg-brand-green-light disabled:opacity-50 text-xs font-bold px-4 py-2.5 rounded-xl transition-colors shadow-xs flex items-center gap-1.5"
-              title="Force sync latest prices from platform connectors"
+              title="Queue a live refresh through the ingestion worker"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
-              <span className="hidden sm:inline">{refreshing ? "Syncing..." : "Live Refresh"}</span>
+              <span className="hidden sm:inline">{refreshing ? "Refreshing..." : "Live Refresh"}</span>
             </button>
             <button
               type="button"
@@ -126,6 +176,19 @@ export const SearchPage: React.FC = () => {
           </form>
         </div>
       </div>
+
+      {refreshNotice && (
+        <div
+          className={`mb-6 rounded-xl border px-4 py-3 text-xs font-semibold flex items-start gap-2 ${
+            refreshNotice.isError
+              ? "bg-amber-50 border-amber-200 text-amber-800"
+              : "bg-brand-green-light border-brand-green/20 text-brand-green"
+          }`}
+        >
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span>{refreshNotice.text}</span>
+        </div>
+      )}
 
       {/* Main Content: Left Filters + Right Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
@@ -281,7 +344,7 @@ export const SearchPage: React.FC = () => {
       <ManualPriceModal
         isOpen={isManualModalOpen}
         onClose={() => setIsManualModalOpen(false)}
-        onSuccess={() => fetchResults(false)}
+        onSuccess={() => fetchResults()}
         defaultTitle={searchTerm}
         defaultPincode={pincode}
       />

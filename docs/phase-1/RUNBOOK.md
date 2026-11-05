@@ -41,10 +41,12 @@ curl -X POST http://localhost:5001/api/ingestion/refresh \
   -d '{
     "platforms": ["blinkit", "zepto", "bigbasket"],
     "queries": ["amul milk", "aashirvaad atta"],
-    "pincode": "110001",
+    "locationKey": "delhi_110001",
     "priority": 10
   }'
 ```
+
+The UI "Live Refresh" and `POST /api/products/:id/refresh` use the same queue. They return immediately with `refresh.status: "queued"` and job IDs; the frontend polls `GET /api/ingestion/jobs/:id` before re-reading the catalog. A queued refresh is never presented as verified fresh data.
 
 ### Checking Queue & Job Status
 ```bash
@@ -140,3 +142,4 @@ curl -X POST http://localhost:5001/api/admin/platforms/blinkit/kill-switch \
   -H "Content-Type: application/json" \
   -d '{"active": false}'
 ```
+

@@ -21,3 +21,4 @@ export function validateRawObservations(items: unknown[]): RawObservation[] {
   }
   return valid;
 }
+

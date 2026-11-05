@@ -104,3 +104,4 @@ export class BigBasketScraper implements PlatformScraper {
 }
 
 export const bigBasketScraper = new BigBasketScraper();
+

@@ -63,26 +63,48 @@ export class BrowserManager {
 
     const context = await this.getContext(platform, location);
     let page: Page | null = null;
-    let interceptedJson: unknown = null;
+    const interceptedPayloads: unknown[] = [];
     let mainStatus: number | undefined;
+
+    const isTargetResponse = (url: string): boolean => {
+      const filter = scraper.responseFilter ?? scraper.matchesResponse;
+      return filter.call(scraper, url);
+    };
 
     try {
       page = await context.newPage();
 
-      // Set up network interceptor
+      // Collect every JSON response that matches this platform. A page often
+      // emits autosuggest/telemetry JSON before the actual product payload, so
+      // parsing only the first response is not reliable.
       page.on("response", async (response) => {
         const url = response.url();
-        if (scraper.matchesResponse(url) && !interceptedJson && response.status() === 200) {
-          try {
-            const text = await response.text();
-            interceptedJson = JSON.parse(text);
-          } catch (e: any) {
-            console.warn(`[BrowserManager] Failed to parse intercepted JSON for ${platform}:`, e.message);
-          }
+        if (!scraper.matchesResponse(url) || response.status() !== 200) return;
+
+        const contentType = (response.headers()["content-type"] || "").toLowerCase();
+        if (!contentType.includes("json")) return;
+
+        try {
+          interceptedPayloads.push(await response.json());
+        } catch (e: any) {
+          console.warn(`[BrowserManager] Failed to parse intercepted JSON for ${platform}:`, e.message);
         }
       });
 
-      const targetUrl = scraper.buildSearchUrl(query, location);
+      // Start waiting before navigation so we do not miss an early response.
+      const targetResponse = page
+        .waitForResponse(
+          (response) =>
+            isTargetResponse(response.url()) &&
+            response.status() === 200 &&
+            (response.headers()["content-type"] || "").toLowerCase().includes("json"),
+          { timeout: 25000 }
+        )
+        .catch(() => null);
+
+      const targetUrl = scraper.getNavigationUrl
+        ? scraper.getNavigationUrl(query, location)
+        : scraper.buildSearchUrl(query, location);
       console.log(`[BrowserManager] ${platform} navigating to: ${targetUrl}`);
 
       const resp = await page.goto(targetUrl, {
@@ -92,13 +114,22 @@ export class BrowserManager {
 
       mainStatus = resp?.status();
 
-      // Wait up to 6 seconds for network activity and hydration
-      await page.waitForTimeout(6000);
+      // Allow the client app to hydrate before interacting with it.
+      await page.waitForTimeout(2500);
+
+      if (scraper.interact) {
+        await scraper.interact(page, ctx);
+      }
+
+      // Wait for the product payload (or time out and fall back to the DOM).
+      await targetResponse;
+      await page.waitForTimeout(2500);
 
       const title = await page.title().catch(() => "");
       const bodySample = await page.evaluate(() => document.body?.innerText?.substring(0, 1000) || "").catch(() => "");
 
-      // Check anti-bot challenges
+      // Check anti-bot challenges. A bare HTTP 202 is not enough on its own:
+      // some platforms return 202 transiently before serving the real page.
       const challenge = await detectChallenge(mainStatus, title, bodySample);
       if (challenge.isBlocked) {
         console.warn(`[BrowserManager] Anti-bot challenge detected on ${platform}: ${challenge.reason}`);
@@ -110,10 +141,17 @@ export class BrowserManager {
         };
       }
 
-      // If intercepted JSON exists, parse it
-      if (interceptedJson) {
-        const observations = scraper.parse(interceptedJson, ctx);
-        return { observations, isBlocked: false };
+      // Parse every captured JSON payload and keep the richest result.
+      let bestObservations: RawObservation[] = [];
+      for (const payload of interceptedPayloads) {
+        const observations = scraper.parse(payload, ctx);
+        if (observations.length > bestObservations.length) {
+          bestObservations = observations;
+        }
+      }
+
+      if (bestObservations.length > 0) {
+        return { observations: bestObservations, isBlocked: false };
       }
 
       // Fallback: DOM extraction if supported
@@ -124,6 +162,17 @@ export class BrowserManager {
         }
       }
 
+      if (mainStatus === 202) {
+        return {
+          observations: [],
+          isBlocked: true,
+          error: "HTTP 202 Interstitial: no product data was served after challenge",
+        };
+      }
+
+      console.warn(
+        `[BrowserManager] No product data captured for ${platform} (${interceptedPayloads.length} JSON responses, DOM fallback empty)`
+      );
       return { observations: [], isBlocked: false };
     } catch (err: any) {
       console.error(`[BrowserManager] Error during scrape for ${platform}:`, err.message);
@@ -141,3 +190,4 @@ export class BrowserManager {
 }
 
 export const browserManager = new BrowserManager();
+

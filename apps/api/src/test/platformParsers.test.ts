@@ -111,6 +111,28 @@ describe("Epic 3 — Platform Parsers with Real & Synthetic Fixtures", () => {
       expect(first.productUrl).toContain("zepto.com/pn/");
     });
 
+    it("parses the live SHOW_ALL_RESULTS layout shape with integer paise prices", () => {
+      const fixture = loadFixture("zepto", "search-results.json");
+      const ctx = { platform: "zepto" as const, query: "amul taaza milk", location: mockLocation };
+
+      const obs = zeptoScraper.parse(fixture, ctx);
+      expect(obs.length).toBe(2);
+
+      const first = obs[0];
+      expect(first.title).toBe("Amul Taaza Homogenised Toned Milk (Tetra Pack)");
+      expect(first.brand).toBe("Amul");
+      expect(first.packSize).toBe("1 pack (1 L)");
+      expect(first.pricePaise).toBe(7700);
+      expect(first.originalPricePaise).toBe(8000);
+      expect(first.discountPercentage).toBe(4);
+      expect(first.availability).toBe("available");
+      expect(first.productUrl).toContain("zepto.com/pn/");
+      expect(first.imageUrl).toContain("cdn.zeptonow.com");
+
+      // availableQuantity: 0 must be surfaced honestly as unavailable.
+      expect(obs[1].availability).toBe("unavailable");
+    });
+
     it("handles empty products array gracefully", () => {
       const fixture = loadFixture("zepto", "empty.json");
       const ctx = { platform: "zepto" as const, query: "milk", location: mockLocation };
@@ -126,5 +148,30 @@ describe("Epic 3 — Platform Parsers with Real & Synthetic Fixtures", () => {
       const obs = zeptoScraper.parse(fixture, ctx);
       expect(obs).toEqual([]);
     });
+
+    it("only intercepts the BFF search API, never the HTML document", () => {
+      expect(zeptoScraper.matchesResponse("https://www.zepto.com/search?query=milk")).toBe(false);
+      expect(
+        zeptoScraper.matchesResponse(
+          "https://bff-gateway.zepto.com/search-federator-service/api/v1/search?query=milk&mode=TYPED&pageNumber=0"
+        )
+      ).toBe(true);
+      expect(
+        zeptoScraper.responseFilter!(
+          "https://bff-gateway.zepto.com/search-federator-service/api/v1/search?query=milk&mode=SHOW_ALL_RESULTS&pageNumber=0"
+        )
+      ).toBe(true);
+      expect(
+        zeptoScraper.responseFilter!(
+          "https://bff-gateway.zepto.com/search-federator-service/api/v1/search?query=milk&mode=AUTOSUGGEST&pageNumber=0"
+        )
+      ).toBe(false);
+      expect(
+        zeptoScraper.responseFilter!(
+          "https://bff-gateway.zepto.com/search-federator-service/api/v1/search?query=milk&mode=TYPED&pageNumber=0"
+        )
+      ).toBe(false);
+    });
   });
 });
+

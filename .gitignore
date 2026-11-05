@@ -26,6 +26,11 @@ pnpm-debug.log*
 Thumbs.db
 coverage/
 
+# Browser automation state (contains session cookies — never commit)
+.cache/
+.browser-profiles/
+.playwright-mcp/
+
 # IDE
 .idea/
 .vscode/
@@ -33,5 +38,6 @@ coverage/
 *.swo
 .agents/hooks.json
 .cursor/hooks.json
-GroqAI
-.playwright-mcp/
+
+# Root symlink only (do not ignore every path named groqai)
+/GroqAI

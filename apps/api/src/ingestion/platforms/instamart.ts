@@ -24,3 +24,4 @@ export class InstamartScraper implements PlatformScraper {
 }
 
 export const instamartScraper = new InstamartScraper();
+
