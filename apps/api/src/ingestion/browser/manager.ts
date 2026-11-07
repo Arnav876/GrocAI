@@ -18,7 +18,8 @@ export class BrowserManager {
       return existing;
     }
 
-    const isHeadless = process.env.PLAYWRIGHT_HEADLESS === "true";
+    // Default to headless so background ingestion does not steal window focus
+    const isHeadless = process.env.PLAYWRIGHT_HEADLESS !== "false";
     const config = getBrowserSessionConfig(platform, loc, isHeadless);
 
     console.log(`[BrowserManager] Launching persistent context for ${platform} (headless: ${config.headless})...`);
