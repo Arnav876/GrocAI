@@ -11,6 +11,10 @@ import {
   UnknownFeeDetail,
 } from "@groqai/shared";
 
+// Re-export Phase 3 Deterministic 3-Strategy Optimization & Shopping Handoff Services
+export * from "../services/optimizationService.js";
+export * from "../services/shoppingHandoffService.js";
+
 export interface ItemListingInput {
   platform: PlatformId;
   pricePaise: number | null; // null if unavailable

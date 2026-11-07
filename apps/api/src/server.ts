@@ -25,6 +25,11 @@ import { CatalogBackgroundService } from "./services/catalogJobs.js";
 import { GrocerySyncService } from "./services/grocerySyncService.js";
 import { FeeIntelligenceService } from "./services/feeIntelligence.js";
 import { DataProvenanceService } from "./services/dataProvenance.js";
+import { OptimizationService } from "./services/optimizationService.js";
+import {
+  ShoppingHandoffService,
+  buildPlatformSearchDeepLink,
+} from "./services/shoppingHandoffService.js";
 import { PostgresScrapeQueue } from "./ingestion/queue.js";
 import { toObservation } from "./ingestion/normalize.js";
 
@@ -55,6 +60,7 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
   const syncService = new GrocerySyncService(prisma, registry);
   const scrapeQueue = new PostgresScrapeQueue(prisma);
   const feeIntelligence = new FeeIntelligenceService(prisma);
+  const optimizationService = new OptimizationService(prisma, feeIntelligence);
   const dataProvenance = new DataProvenanceService(prisma);
   const nlParser = createNLParser();
 
@@ -1312,17 +1318,21 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
               return {
                 platform: platformKey,
                 platformName: meta.name,
-                items: plan.items.map((it: any) => ({
-                  title: it.matchedTitle,
-                  brand: it.brand,
-                  variant: it.variant,
-                  quantity: it.quantity,
-                  unitPriceRupees: it.unitPriceRupees,
-                  totalPriceRupees: it.totalPriceRupees,
-                  productUrl: undefined,
-                  searchUrl: it.searchUrl || `${meta.searchBaseUrl}${encodeURIComponent(it.matchedTitle)}`,
-                  isDeepLink: false,
-                })),
+                items: plan.items.map((it: any) => {
+                  const searchLink =
+                    it.searchUrl || buildPlatformSearchDeepLink(platformKey, it.matchedTitle);
+                  return {
+                    title: it.matchedTitle,
+                    brand: it.brand,
+                    variant: it.variant,
+                    quantity: it.quantity,
+                    unitPriceRupees: it.unitPriceRupees,
+                    totalPriceRupees: it.totalPriceRupees,
+                    productUrl: undefined,
+                    searchUrl: searchLink,
+                    isDeepLink: false,
+                  };
+                }),
                 subtotalRupees: plan.subtotalRupees,
                 estimatedFeesRupees:
                   plan.deliveryFeeRupees + plan.handlingFeeRupees + plan.platformFeeRupees,
@@ -1336,6 +1346,34 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
           )
         : [];
 
+      // Generate full copyable markdown checklist
+      const storeCartsForMarkdown = chosenOption
+        ? Object.entries(chosenOption.perPlatform).map(([pid, plan]: [string, any]) => ({
+            platformId: pid as PlatformId,
+            platformName: PLATFORM_METADATA[pid as PlatformId].name,
+            items: plan.items.map((it: any) => ({
+              title: it.matchedTitle,
+              brand: it.brand,
+              variant: it.variant,
+              quantity: it.quantity,
+              unitPricePaise: Math.round(it.unitPriceRupees * 100),
+              totalPricePaise: Math.round(it.totalPriceRupees * 100),
+              searchUrl: it.searchUrl || buildPlatformSearchDeepLink(pid as PlatformId, it.matchedTitle),
+            })),
+            subtotalPaise: Math.round(plan.subtotalRupees * 100),
+            deliveryFeePaise: Math.round(plan.deliveryFeeRupees * 100),
+            handlingFeeMinPaise: Math.round(plan.handlingFeeRupees * 100),
+            handlingFeeMaxPaise: Math.round(plan.handlingFeeRupees * 100),
+            platformFeePaise: Math.round(plan.platformFeeRupees * 100),
+            hasUnknownFees: plan.hasUnknownFee,
+          }))
+        : [];
+
+      const markdownChecklist = ShoppingHandoffService.generateMarkdownChecklist(storeCartsForMarkdown, {
+        strategyName: chosenOption?.title || parsed.strategy,
+        pincode: record.pincode,
+      });
+
       res.status(200).json({
         handoffId: `hnd-${Date.now()}`,
         optimizationId: parsed.optimizationId,
@@ -1345,6 +1383,13 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
         isEstimate: true,
         notice:
           "Verify basket, address, fees and total in the app. Payment happens on the platform, not on GroqAI.",
+        capabilities: {
+          createCart: false,
+          automatedCheckout: false,
+          searchDeepLink: true,
+          checklistHandoff: true,
+        },
+        markdownChecklist,
         platforms: platformsList,
       });
     } catch (err: any) {
@@ -1352,6 +1397,26 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
         return res.status(400).json({ error: "Validation failed", details: err.errors });
       }
       next(err);
+    }
+  });
+
+  // POST /api/basket/optimize (Phase 3 Deterministic 3-Strategy Optimization Engine)
+  app.post("/api/basket/optimize", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await optimizationService.optimizeBasket(req.body);
+      res.status(201).json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message || "Optimization failed" });
+    }
+  });
+
+  // POST /api/basket/handoff (Phase 3 Shopping Handoff Engine)
+  app.post("/api/basket/handoff", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const payload = ShoppingHandoffService.generateHandoffPayload(req.body);
+      res.status(200).json(payload);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message || "Handoff generation failed" });
     }
   });
 

@@ -399,37 +399,71 @@ export interface OptimizationResponse {
   warnings: string[];
 }
 
+export interface HandoffItem {
+  title: string;
+  brand?: string;
+  variant?: string;
+  quantity: number;
+  unitPriceRupees?: number;
+  totalPriceRupees?: number;
+  unitPricePaise?: number;
+  totalPricePaise?: number;
+  productUrl?: string;
+  searchUrl?: string;
+  isDeepLink: boolean;
+  checkboxMarkdown?: string;
+}
+
 export interface HandoffPlatformGroup {
   platform: PlatformId;
   platformName: string;
-  items: {
-    title: string;
-    brand?: string;
-    variant?: string;
-    quantity: number;
-    unitPriceRupees: number;
-    totalPriceRupees: number;
-    productUrl?: string;
-    searchUrl?: string;
-    isDeepLink: boolean;
-  }[];
-  subtotalRupees: number;
-  estimatedFeesRupees: number;
+  items: HandoffItem[];
+  subtotalRupees?: number;
+  subtotalPaise?: number;
+  estimatedFeesRupees?: number;
   hasUnknownFees: boolean;
-  estimatedTotalRupees: number;
-  meetsMinimumOrder: boolean;
+  estimatedTotalRupees?: number;
+  estimatedTotalMinPaise?: number;
+  estimatedTotalMaxPaise?: number;
+  meetsMinimumOrder?: boolean;
   checklistText: string;
   cartReviewUrl?: string;
+  storeChecklistMarkdown?: string;
+  cliffTip?: string;
+}
+
+export interface CartHandoffCapabilities {
+  createCart: boolean;
+  automatedCheckout: boolean;
+  searchDeepLink: boolean;
+  checklistHandoff: boolean;
 }
 
 export interface ShoppingHandoffResponse {
   handoffId: string;
-  optimizationId: string;
-  strategy: OptimizationStrategy;
+  optimizationId?: string;
+  pincode?: string;
+  strategy: string;
+  strategyName?: string;
   timestamp: string;
   method: "links_and_checklist" | "automated_cart_api";
   isEstimate: boolean;
   notice: string;
+  capabilities?: CartHandoffCapabilities;
+  markdownChecklist?: string;
+  grandTotalPaise?: {
+    subtotalPaise: number;
+    feeMinPaise: number;
+    feeMaxPaise: number;
+    estimatedTotalMinPaise: number;
+    estimatedTotalMaxPaise: number;
+    hasUnknownFees: boolean;
+  };
+  grandTotalRupees?: {
+    subtotal: string;
+    estimatedTotalMin: string;
+    estimatedTotalMax: string;
+  };
   platforms: HandoffPlatformGroup[];
 }
 

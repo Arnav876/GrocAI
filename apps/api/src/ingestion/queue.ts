@@ -26,7 +26,7 @@ export class PostgresScrapeQueue {
 
   async claimNext(workerId: string): Promise<any | null> {
     // Check and claim next job using atomic update
-    const now = new Date();
+    const now = new Date(Date.now() + 1000);
 
     return await this.prisma.$transaction(async (tx) => {
       // Find candidate job
