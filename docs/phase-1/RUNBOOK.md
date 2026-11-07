@@ -42,9 +42,32 @@ npm run scheduler --workspace=apps/api
 CATALOG_MAINTENANCE_INTERVAL_MS=300000 npm run scheduler --workspace=apps/api
 ```
 
----
+## 2. Fee Intelligence
 
-## 2. Triggering Ingestion Jobs
+Fee rules are location-scoped and carry provenance. Unknown fees are stored as `null` (or a `{minPaise,maxPaise}` range) and are never coerced to ₹0. If a location has no rule, optimization warnings explicitly say the fees are unknown.
+
+```bash
+# Read fee structures for a location (all four platforms)
+curl 'http://localhost:5001/api/fees?locationKey=delhi_110001'
+
+# Record manually verified fees (instamart/bigbasket included; no checkout automation)
+curl -X PUT http://localhost:5001/api/fees/bigbasket \
+  -H "Content-Type: application/json" \
+  -d '{
+    "locationKey": "delhi_110001",
+    "deliveryFeePaise": 3000,
+    "handlingFeeRangeMinPaise": 500,
+    "handlingFeeRangeMaxPaise": 1500,
+    "platformFeePaise": 300,
+    "freeDeliveryThresholdPaise": 25000,
+    "minimumOrderValuePaise": 15000,
+    "notes": ["Verified in app on 2026-11-07"]
+  }'
+```
+
+Manual entries are stamped `sourceType: "manual"` and appear in optimization warnings; seeded values are stamped `mock` and also produce a verification warning.
+
+## 3. Triggering Ingestion Jobs
 
 ### Via HTTP API
 You can enqueue jobs via the Express API:
@@ -72,7 +95,7 @@ curl -s http://localhost:5001/api/ingestion/jobs/<JOB_ID> | jq
 
 ---
 
-## 3. Submitting Manual Instamart / Offline Prices
+## 4. Submitting Manual Instamart / Offline Prices
 
 Since Swiggy Instamart is routed through assisted/manual capture to respect anti-bot gates:
 ```bash
@@ -96,7 +119,7 @@ Or use the frontend UI:
 
 ---
 
-## 4. Recovering Blocked Platforms
+## 5. Recovering Blocked Platforms
 
 When a platform responds with HTTP 403, 202, or a PerimeterX/Cloudflare challenge:
 1. `ChallengeDetector` halts the scraper immediately to avoid sending suspicious traffic.
@@ -125,7 +148,7 @@ When a platform responds with HTTP 403, 202, or a PerimeterX/Cloudflare challeng
 
 ---
 
-## 5. Running with Xvfb on Headless Linux Hosts
+## 6. Running with Xvfb on Headless Linux Hosts
 
 Headed Chromium requires an X11 display. On headless cloud servers (e.g. AWS EC2, GCP, Ubuntu server), run the worker inside an Xvfb virtual framebuffer:
 
@@ -141,7 +164,7 @@ xvfb-run --server-args="-screen 0 1280x800x24" npm run worker --workspace=apps/a
 
 ---
 
-## 6. Emergency Kill Switch
+## 7. Emergency Kill Switch
 
 If a connector behaves erratically or sends excessive requests, use the admin kill switch:
 ```bash

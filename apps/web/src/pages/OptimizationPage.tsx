@@ -167,6 +167,21 @@ export const OptimizationPage: React.FC = () => {
         </button>
       </div>
 
+      {/* Data provenance warnings */}
+      {optimization.warnings.length > 0 && (
+        <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-900">
+          <div className="font-bold flex items-center gap-1.5 mb-2">
+            <Info className="w-4 h-4 text-amber-600" />
+            <span>Data Caveats & Fee Provenance</span>
+          </div>
+          <ul className="list-disc pl-5 space-y-1 text-[11px] leading-relaxed">
+            {optimization.warnings.map((warning, idx) => (
+              <li key={`${idx}-${warning}`}>{warning}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* 3 Strategy Cards / Tabs */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-8">
         {optimization.options.map((opt) => {

@@ -17,12 +17,12 @@ import { ConnectorRegistry } from "./connectors/registry.js";
 import {
   runOptimizationEngine,
   RequestedOptimizationItem,
-  FeeRuleInput,
 } from "./optimization/optimizer.js";
 import { defaultMatcher } from "./matching/matchingService.js";
 import { createNLParser } from "./services/naturalLanguageService.js";
 import { CatalogBackgroundService } from "./services/catalogJobs.js";
 import { GrocerySyncService } from "./services/grocerySyncService.js";
+import { FeeIntelligenceService } from "./services/feeIntelligence.js";
 import { PostgresScrapeQueue } from "./ingestion/queue.js";
 import { toObservation } from "./ingestion/normalize.js";
 
@@ -32,6 +32,7 @@ export function createServer(prisma: PrismaClient) {
   const catalogJobs = new CatalogBackgroundService(prisma, registry);
   const syncService = new GrocerySyncService(prisma, registry);
   const scrapeQueue = new PostgresScrapeQueue(prisma);
+  const feeIntelligence = new FeeIntelligenceService(prisma);
   const nlParser = createNLParser();
 
   // Live refresh is handled by the ingestion queue/worker. Instamart is
@@ -873,31 +874,9 @@ export function createServer(prisma: PrismaClient) {
     try {
       const parsed = OptimizationRequestSchema.parse(req.body);
 
-      // 1. Fetch fee rules for location from database
-      const feeRuleRecords = await prisma.platformFeeRule.findMany({
-        where: { locationKey: parsed.locationId },
-      });
-
-      const feeRules: Record<PlatformId, FeeRuleInput> = {
-        blinkit: { platform: "blinkit", deliveryFeePaise: 1500, handlingFeePaise: 400, platformFeePaise: 300, freeDeliveryThresholdPaise: 19900, minimumOrderValuePaise: 9900 },
-        zepto: { platform: "zepto", deliveryFeePaise: 2500, handlingFeePaise: 500, platformFeePaise: 200, freeDeliveryThresholdPaise: 14900, minimumOrderValuePaise: 9900 },
-        instamart: { platform: "instamart", deliveryFeePaise: 3000, handlingFeePaise: 500, platformFeePaise: 400, freeDeliveryThresholdPaise: 19900, minimumOrderValuePaise: 10000 },
-        bigbasket: { platform: "bigbasket", deliveryFeePaise: 3000, handlingFeePaise: null, handlingFeeRangeMinPaise: 500, handlingFeeRangeMaxPaise: 1500, platformFeePaise: 300, freeDeliveryThresholdPaise: 25000, minimumOrderValuePaise: 15000 },
-      };
-
-      for (const r of feeRuleRecords) {
-        const pid = r.platform as PlatformId;
-        feeRules[pid] = {
-          platform: pid,
-          deliveryFeePaise: r.deliveryFeePaise,
-          handlingFeePaise: r.handlingFeePaise,
-          handlingFeeRangeMinPaise: r.handlingFeeRangeMinPaise,
-          handlingFeeRangeMaxPaise: r.handlingFeeRangeMaxPaise,
-          platformFeePaise: r.platformFeePaise,
-          freeDeliveryThresholdPaise: r.freeDeliveryThresholdPaise,
-          minimumOrderValuePaise: r.minimumOrderValuePaise,
-        };
-      }
+      // 1. Build fee rules for the location without inventing unknown fees.
+      const { feeRules, warnings: feeWarnings } =
+        await feeIntelligence.buildOptimizationFeeRules(parsed.locationId);
 
       // 2. Fetch products and match items
       const allProducts = await prisma.product.findMany({
@@ -994,7 +973,7 @@ export function createServer(prisma: PrismaClient) {
           baselineName: optResult.baselineName,
           baselineTotalPaise: optResult.baselineTotalPaise,
           optionsJson: JSON.stringify(optResult.options),
-          warnings: [...unmatchedWarnings, ...optResult.warnings],
+          warnings: [...unmatchedWarnings, ...feeWarnings, ...optResult.warnings],
         },
       });
 
@@ -1007,7 +986,7 @@ export function createServer(prisma: PrismaClient) {
         baselineTotalPaise: optResult.baselineTotalPaise,
         baselineTotalRupees: optResult.baselineTotalRupees,
         options: optResult.options,
-        warnings: [...unmatchedWarnings, ...optResult.warnings],
+        warnings: [...unmatchedWarnings, ...feeWarnings, ...optResult.warnings],
       });
     } catch (err: any) {
       if (err.name === "ZodError") {
@@ -1110,6 +1089,45 @@ export function createServer(prisma: PrismaClient) {
       connectors,
       backgroundJobs: jobMetrics,
     });
+  });
+
+  // GET /api/fees?locationKey=delhi_110001
+  app.get("/api/fees", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const locationKey = (req.query.locationKey as string) || "delhi_110001";
+      const rules = await feeIntelligence.getFeeRules(locationKey);
+      res.json({
+        locationKey,
+        rules,
+        disclaimer:
+          "Fees are estimates. Unknown values are preserved as null and must never be treated as ₹0. Verify in the platform app before checkout.",
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // PUT /api/fees/:platform
+  app.put("/api/fees/:platform", async (req: Request, res: Response) => {
+    try {
+      const platform = req.params.platform as PlatformId;
+      if (!SUPPORTED_PLATFORMS.includes(platform)) {
+        return res.status(404).json({ error: `Platform ${req.params.platform} not recognized` });
+      }
+
+      const locationKey = (req.body?.locationKey as string) || "delhi_110001";
+      const rule = await feeIntelligence.upsertManualFeeRule(
+        platform,
+        locationKey,
+        req.body ?? {}
+      );
+      return res.json({
+        rule,
+        message: `Manual fee structure saved for ${platform} at ${locationKey}. Fees are not verified against checkout.`,
+      });
+    } catch (err: any) {
+      return res.status(400).json({ error: err.message });
+    }
   });
 
   // POST /api/admin/platforms/:id/kill-switch

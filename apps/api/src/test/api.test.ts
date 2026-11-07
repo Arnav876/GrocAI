@@ -6,6 +6,7 @@ import { createServer } from "../server.js";
 describe("API Endpoint Integration Tests", () => {
   let prisma: PrismaClient;
   let app: any;
+  const FEE_TEST_LOCATION = "delhi_560003";
 
   beforeAll(() => {
     prisma = new PrismaClient();
@@ -13,6 +14,9 @@ describe("API Endpoint Integration Tests", () => {
   });
 
   afterAll(async () => {
+    await prisma.platformFeeRule.deleteMany({
+      where: { locationKey: FEE_TEST_LOCATION },
+    });
     await prisma.$disconnect();
   });
 
@@ -41,6 +45,54 @@ describe("API Endpoint Integration Tests", () => {
     expect(res.body[0]).toHaveProperty("lowestPricePaise");
   });
 
+  it("GET /api/fees returns every platform with honest unknown/provenance fields", async () => {
+    const res = await request(app).get("/api/fees?locationKey=delhi_110001");
+    expect(res.status).toBe(200);
+    expect(res.body.locationKey).toBe("delhi_110001");
+    expect(res.body.rules).toHaveLength(4);
+    expect(res.body.disclaimer).toContain("never be treated as ₹0");
+    for (const rule of res.body.rules) {
+      expect(rule).toHaveProperty("isKnown");
+      expect(rule).toHaveProperty("sourceType");
+      expect(rule).toHaveProperty("deliveryFeePaise");
+    }
+  });
+
+  it("PUT /api/fees/:platform persists manual fee data and rejects invalid paise", async () => {
+    const save = await request(app).put("/api/fees/zepto").send({
+      locationKey: FEE_TEST_LOCATION,
+      deliveryFeePaise: 2500,
+      handlingFeePaise: 500,
+      platformFeePaise: 200,
+      freeDeliveryThresholdPaise: 14900,
+      minimumOrderValuePaise: 9900,
+    });
+    expect(save.status).toBe(200);
+    expect(save.body.rule.sourceType).toBe("manual");
+    expect(save.body.rule.deliveryFeePaise).toBe(2500);
+
+    const read = await request(app).get(`/api/fees?locationKey=${FEE_TEST_LOCATION}`);
+    const zepto = read.body.rules.find((r: any) => r.platform === "zepto");
+    expect(zepto.isKnown).toBe(true);
+    expect(zepto.sourceType).toBe("manual");
+    expect(zepto.handlingFeePaise).toBe(500);
+
+    // Other platforms at this location remain explicitly unknown.
+    const blinkit = read.body.rules.find((r: any) => r.platform === "blinkit");
+    expect(blinkit.isKnown).toBe(false);
+    expect(blinkit.deliveryFeePaise).toBeNull();
+
+    const invalid = await request(app).put("/api/fees/zepto").send({
+      locationKey: FEE_TEST_LOCATION,
+      deliveryFeePaise: 25.5,
+    });
+    expect(invalid.status).toBe(400);
+    expect(invalid.body.error).toContain("integer number of paise");
+
+    const unknownPlatform = await request(app).put("/api/fees/not-a-platform").send({});
+    expect(unknownPlatform.status).toBe(404);
+  });
+
   it("POST /api/optimizations calculates 3 strategies and returns valid response", async () => {
     const payload = {
       locationId: "delhi_110001",
@@ -61,6 +113,9 @@ describe("API Endpoint Integration Tests", () => {
     expect(res.body).toHaveProperty("id");
     expect(res.body).toHaveProperty("baselineName");
     expect(res.body.options.length).toBe(3);
+    expect(
+      res.body.warnings.some((w: string) => w.includes("mock estimate"))
+    ).toBe(true);
 
     // Save optimization ID for subsequent tests
     const optId = res.body.id;
