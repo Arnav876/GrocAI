@@ -79,7 +79,7 @@ export class BrowserManager {
       // parsing only the first response is not reliable.
       page.on("response", async (response) => {
         const url = response.url();
-        if (!scraper.matchesResponse(url) || response.status() !== 200) return;
+        if (!isTargetResponse(url) || response.status() !== 200) return;
 
         const contentType = (response.headers()["content-type"] || "").toLowerCase();
         if (!contentType.includes("json")) return;
@@ -118,11 +118,26 @@ export class BrowserManager {
       await page.waitForTimeout(2500);
 
       if (scraper.interact) {
-        await scraper.interact(page, ctx);
-      }
+        // Start listening before interacting: typing and clicking may emit the
+        // product payload while interact() is still settling. The earlier
+        // navigation-time wait can resolve on a recommendation payload, so it
+        // must not be used for interactive platforms.
+        const interactionResponse = page
+          .waitForResponse(
+            (response) =>
+              isTargetResponse(response.url()) &&
+              response.status() === 200 &&
+              (response.headers()["content-type"] || "").toLowerCase().includes("json"),
+            { timeout: 25000 }
+          )
+          .catch(() => null);
 
-      // Wait for the product payload (or time out and fall back to the DOM).
-      await targetResponse;
+        await scraper.interact(page, ctx);
+        await interactionResponse;
+      } else {
+        // Wait for the product payload (or time out and fall back to the DOM).
+        await targetResponse;
+      }
       await page.waitForTimeout(2500);
 
       const title = await page.title().catch(() => "");

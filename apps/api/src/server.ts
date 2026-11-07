@@ -138,6 +138,8 @@ export function createServer(prisma: PrismaClient) {
     try {
       const query = (req.query.q as string) || "";
       const category = (req.query.category as string) || "";
+      const pincode = (req.query.pincode as string) || "110001";
+      const locationKey = `delhi_${pincode}`;
 
       const whereClause: any = {};
       if (category) {
@@ -165,7 +167,9 @@ export function createServer(prisma: PrismaClient) {
       const products = await prisma.product.findMany({
         where: whereClause,
         include: {
-          listings: true,
+          listings: {
+            where: { locationKey },
+          },
         },
       });
 
@@ -242,8 +246,6 @@ export function createServer(prisma: PrismaClient) {
       }
 
       const forceRefresh = req.query.refresh === "true";
-      const pincode = (req.query.pincode as string) || "110001";
-      const locationKey = `delhi_${pincode}`;
 
       if (forceRefresh && products.length > 0) {
         // Enqueue real ingestion jobs instead of calling the legacy mock
@@ -274,7 +276,11 @@ export function createServer(prisma: PrismaClient) {
 
       const prod = await prisma.product.findUnique({
         where: { id },
-        include: { listings: true },
+        include: {
+          listings: {
+            where: { locationKey },
+          },
+        },
       });
 
       if (!prod) {
@@ -369,7 +375,11 @@ export function createServer(prisma: PrismaClient) {
 
       const prod = await prisma.product.findUnique({
         where: { id },
-        include: { listings: true },
+        include: {
+          listings: {
+            where: { locationKey },
+          },
+        },
       });
 
       if (!prod) {
@@ -678,6 +688,8 @@ export function createServer(prisma: PrismaClient) {
         return res.status(400).json({ error: "Valid pricePaise or priceRupees is required" });
       }
 
+      const locationKey = `delhi_${pincode}`;
+
       const allProducts = await prisma.product.findMany();
       let bestProd: any = null;
       let highestConf = -1;
@@ -706,7 +718,7 @@ export function createServer(prisma: PrismaClient) {
           pincode,
           serviceableArea: "Manual User Entry",
         },
-        { pincode, locationKey: `loc_${pincode}` },
+        { pincode, locationKey },
         {
           productId: bestProd?.id,
           sourceType: "manual",
@@ -720,6 +732,7 @@ export function createServer(prisma: PrismaClient) {
         data: {
           productId: obs.productId,
           platform: obs.platform,
+          locationKey: obs.locationKey,
           rawTitle: obs.title,
           brand: obs.brand,
           variant: obs.variant,
@@ -746,14 +759,16 @@ export function createServer(prisma: PrismaClient) {
       if (bestProd) {
         await prisma.platformListing.upsert({
           where: {
-            productId_platform: {
+            productId_platform_locationKey: {
               productId: bestProd.id,
               platform: platform as PlatformId,
+              locationKey,
             },
           },
           create: {
             productId: bestProd.id,
             platform,
+            locationKey,
             currentPricePaise: calculatedPricePaise,
             availability: "available",
             isStale: false,
@@ -790,9 +805,14 @@ export function createServer(prisma: PrismaClient) {
   app.post("/api/comparisons", async (req: Request, res: Response, next: NextFunction) => {
     try {
       const productIds = req.body.productIds || [];
+      const locationKey = (req.body.locationKey as string) || "delhi_110001";
       const products = await prisma.product.findMany({
         where: { id: { in: productIds } },
-        include: { listings: true },
+        include: {
+          listings: {
+            where: { locationKey },
+          },
+        },
       });
       res.json(products);
     } catch (err) {
@@ -881,7 +901,11 @@ export function createServer(prisma: PrismaClient) {
 
       // 2. Fetch products and match items
       const allProducts = await prisma.product.findMany({
-        include: { listings: true },
+        include: {
+          listings: {
+            where: { locationKey: parsed.locationId },
+          },
+        },
       });
 
       const unmatchedWarnings: string[] = [];

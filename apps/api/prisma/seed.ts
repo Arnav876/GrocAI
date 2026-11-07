@@ -9,6 +9,26 @@ const prisma = new PrismaClient();
 async function main() {
   console.log("Seeding GroqAI database...");
 
+  // 0. Seed the default serviceable location used by the worker and UI.
+  await prisma.location.upsert({
+    where: { locationKey: "delhi_110001" },
+    update: {
+      pincode: "110001",
+      city: "Central Delhi",
+      latitude: 28.6304,
+      longitude: 77.2177,
+      serviceableArea: "Connaught Place",
+    },
+    create: {
+      locationKey: "delhi_110001",
+      pincode: "110001",
+      city: "Central Delhi",
+      latitude: 28.6304,
+      longitude: 77.2177,
+      serviceableArea: "Connaught Place",
+    },
+  });
+
   // 1. Seed Categories
   for (const cat of MOCK_CATEGORIES) {
     await prisma.category.upsert({
@@ -120,9 +140,10 @@ async function main() {
       if (platData) {
         await prisma.platformListing.upsert({
           where: {
-            productId_platform: {
+            productId_platform_locationKey: {
               productId: prod.id,
               platform: pid,
+              locationKey: "delhi_110001",
             },
           },
           update: {
@@ -137,6 +158,7 @@ async function main() {
           create: {
             productId: prod.id,
             platform: pid,
+            locationKey: "delhi_110001",
             currentPricePaise: platData.pricePaise || null,
             availability: platData.availability,
             isStale: platData.isStale,

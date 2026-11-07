@@ -102,9 +102,10 @@ describe("Epic 5 & 6 — Ingestion API & Instamart Manual Adapter", () => {
       // Verify the PlatformListing for amul-taaza-1l on Instamart was updated to manual
       const listing = await prisma.platformListing.findUnique({
         where: {
-          productId_platform: {
+          productId_platform_locationKey: {
             productId: "amul-taaza-1l",
             platform: "instamart",
+            locationKey: "delhi_110001",
           },
         },
       });

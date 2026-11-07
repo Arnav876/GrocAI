@@ -29,6 +29,19 @@ To process at most one queued job and exit immediately (useful for cron jobs, lo
 npm run worker:once --workspace=apps/api
 ```
 
+### Freshness Scheduler
+The scheduler flags listings older than 6 hours as stale and enqueues one polite refresh job per platform/location (Instamart is skipped). It reuses an existing queued/running job instead of piling up duplicates.
+```bash
+# Run one maintenance cycle and exit
+npm run scheduler:once --workspace=apps/api
+
+# Run continuously (default every 15 minutes)
+npm run scheduler --workspace=apps/api
+
+# Override the interval
+CATALOG_MAINTENANCE_INTERVAL_MS=300000 npm run scheduler --workspace=apps/api
+```
+
 ---
 
 ## 2. Triggering Ingestion Jobs

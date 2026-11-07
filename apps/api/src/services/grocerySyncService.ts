@@ -73,7 +73,11 @@ export class GrocerySyncService {
 
     const prod = await this.prisma.product.findUnique({
       where: { id: productId },
-      include: { listings: true },
+      include: {
+        listings: {
+          where: { locationKey },
+        },
+      },
     });
 
     if (!prod) {
@@ -190,10 +194,17 @@ export class GrocerySyncService {
             // Update PlatformListing in DB with verified observation
             const newObservedAt = new Date(matchedObs.observedAt || Date.now());
             await this.prisma.platformListing.upsert({
-              where: { productId_platform: { productId: prod.id, platform: pid } },
+              where: {
+                productId_platform_locationKey: {
+                  productId: prod.id,
+                  platform: pid,
+                  locationKey,
+                },
+              },
               create: {
                 productId: prod.id,
                 platform: pid,
+                locationKey,
                 currentPricePaise: obsPricePaise,
                 availability: matchedObs.availability || "available",
                 isStale,

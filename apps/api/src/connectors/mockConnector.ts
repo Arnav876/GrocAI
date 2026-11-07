@@ -45,6 +45,7 @@ export class MockConnector implements IPlatformConnector {
     const listings = await this.prisma.platformListing.findMany({
       where: {
         platform: this.platformId,
+        locationKey,
         product: {
           name: {
             contains: query,
@@ -88,9 +89,10 @@ export class MockConnector implements IPlatformConnector {
 
     const listing = await this.prisma.platformListing.findUnique({
       where: {
-        productId_platform: {
+        productId_platform_locationKey: {
           productId,
           platform: this.platformId,
+          locationKey,
         },
       },
       include: {

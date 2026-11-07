@@ -23,6 +23,32 @@ describe("UnitNormalizer and Price Normalization", () => {
     expect(parseAndNormalizeQuantity("1 dozen")).toEqual({ value: 12, baseUnit: "pcs", rawUnit: "dozen" });
   });
 
+  it("parses marketplace pack descriptors and multipacks", () => {
+    // Zepto-style descriptors wrap the real quantity in a pack label.
+    expect(parseAndNormalizeQuantity("1 pack (1 L)")).toEqual({ value: 1000, baseUnit: "ml", rawUnit: "l" });
+    expect(parseAndNormalizeQuantity("1 pack (200 ml)")).toEqual({ value: 200, baseUnit: "ml", rawUnit: "ml" });
+    expect(parseAndNormalizeQuantity("1 pack (400 g)")).toEqual({ value: 400, baseUnit: "g", rawUnit: "g" });
+    expect(areQuantitiesCompatible("1 pack (1 L)", "1 L")).toBe(true);
+
+    // Combo quantities must count every unit, not just the first.
+    expect(parseAndNormalizeQuantity("1 L X 12")).toEqual({ value: 12000, baseUnit: "ml", rawUnit: "l" });
+    expect(parseAndNormalizeQuantity("200 ml X 2")).toEqual({ value: 400, baseUnit: "ml", rawUnit: "ml" });
+    expect(parseAndNormalizeQuantity("2 x 1 L")).toEqual({ value: 2000, baseUnit: "ml", rawUnit: "l" });
+    expect(parseAndNormalizeQuantity("pack of 6 (500 ml)")).toEqual({ value: 3000, baseUnit: "ml", rawUnit: "ml" });
+  });
+
+  it("calculates normalized unit prices for marketplace pack descriptors", () => {
+    // ₹90 for a 12 x 1 L combo is ₹7.50/L, not ₹90/L.
+    const combo = calculateNormalizedUnitPrice(9000, "1 L X 12");
+    expect(combo?.unit).toBe("L");
+    expect(combo?.pricePerUnitPaise).toBe(750);
+    expect(combo?.displayUnitPrice).toBe("₹7.50 / L");
+
+    const tetra = calculateNormalizedUnitPrice(7700, "1 pack (1 L)");
+    expect(tetra?.unit).toBe("L");
+    expect(tetra?.pricePerUnitPaise).toBe(7700);
+  });
+
   it("correctly identifies quantity compatibility within tolerance", () => {
     expect(areQuantitiesCompatible("1000 ml", "1 L")).toBe(true);
     expect(areQuantitiesCompatible("500 g", "0.5 kg")).toBe(true);

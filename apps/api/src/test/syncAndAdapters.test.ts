@@ -145,7 +145,13 @@ describe("Real-Time Grocery Data Integration & Adapters", () => {
 
       // Verify that database was NOT corrupted with null or 0
       const dbListing = await prisma.platformListing.findUnique({
-        where: { productId_platform: { productId: target.id, platform: "blinkit" } },
+        where: {
+          productId_platform_locationKey: {
+            productId: target.id,
+            platform: "blinkit",
+            locationKey: "delhi_110001",
+          },
+        },
       });
       expect(dbListing?.currentPricePaise).toBe(initialBlinkitPrice);
 

@@ -127,6 +127,102 @@ describe("Matching Service & Unit Normalization", () => {
       expect(res.confidence).toBe(0.0);
     });
 
+    it("regression: real Zepto '1 pack (1 L)' descriptor matches a 1 L catalog pack", () => {
+      const res = matcher.match(
+        {
+          query: "Amul Taaza Homogenised Toned Milk (Tetra Pack)",
+          brand: "Amul",
+          packSize: "1 pack (1 L)",
+        },
+        {
+          id: "amul-taaza-1l",
+          name: "Amul Taaza Toned Fresh Milk",
+          brand: "Amul",
+          variant: "Toned Milk (3% Fat)",
+          packSize: "1 L",
+        }
+      );
+      expect(res.isMatch).toBe(true);
+      expect(res.confidence).toBeGreaterThanOrEqual(0.7);
+    });
+
+    it("regression: verbose Zepto Gold tetra title matches the Gold 1 L catalog product", () => {
+      const res = matcher.match(
+        {
+          query: "Amul Gold Homogenised Standardised Milk (Tetra Pack)",
+          brand: "Amul",
+          packSize: "1 pack (1 L)",
+        },
+        {
+          id: "amul-gold-1l",
+          name: "Amul Gold Full Cream Fresh Milk",
+          brand: "Amul",
+          variant: "Full Cream Milk (6% Fat)",
+          packSize: "1 L",
+        }
+      );
+      expect(res.isMatch).toBe(true);
+      expect(res.confidence).toBeGreaterThanOrEqual(0.7);
+    });
+
+    it("rejects a different Amul milk variant with a distinctive missing token", () => {
+      const res = matcher.match(
+        {
+          query: "Amul Moti Toned Milk | 90 Days Shelf life",
+          brand: "Amul",
+          packSize: "1 pack (450 ml)",
+        },
+        {
+          id: "amul-taaza-1l",
+          name: "Amul Taaza Toned Fresh Milk",
+          brand: "Amul",
+          variant: "Toned Milk (3% Fat)",
+          packSize: "450 ml",
+        }
+      );
+      expect(res.isMatch).toBe(false);
+      expect(res.confidence).toBeLessThan(0.7);
+    });
+
+    it("regression: a 12 x 1 L combo never matches a single 1 L listing", () => {
+      const res = matcher.match(
+        {
+          query: "Amul Taaza Homogenised Toned Milk (Tetra Pack) Combo",
+          brand: "Amul",
+          packSize: "1 L X 12",
+        },
+        {
+          id: "amul-taaza-1l",
+          name: "Amul Taaza Toned Fresh Milk",
+          brand: "Amul",
+          variant: "Toned Milk (3% Fat)",
+          packSize: "1 L",
+        }
+      );
+      expect(res.isMatch).toBe(false);
+      expect(res.confidence).toBe(0.0);
+      expect(res.reasons.some((r) => r.includes("Incompatible pack size"))).toBe(true);
+    });
+
+    it("regression: real Zepto Gold 1 L is rejected for the Taaza catalog product", () => {
+      const res = matcher.match(
+        {
+          query: "Amul Gold Homogenised Standardised Milk (Tetra Pack)",
+          brand: "Amul",
+          packSize: "1 pack (1 L)",
+        },
+        {
+          id: "amul-taaza-1l",
+          name: "Amul Taaza Toned Fresh Milk",
+          brand: "Amul",
+          variant: "Toned Milk (3% Fat)",
+          packSize: "1 L",
+        }
+      );
+      expect(res.isMatch).toBe(false);
+      expect(res.reasons.some((r) => r.includes("Conflicting product variant"))).toBe(true);
+    });
+
     it("regression: completely unrelated query never matches and is not substituted", () => {
       const res = matcher.match(
         { query: "Apple iPhone 16 Pro Max" },

@@ -50,6 +50,7 @@ model PlatformListing {
   productId        String
   product          Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   platform         String   // blinkit, zepto, instamart, bigbasket
+  locationKey      String   @default("delhi_110001")
   externalId       String?
   productUrl       String?
   searchUrl        String?
@@ -62,8 +63,9 @@ model PlatformListing {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  @@unique([productId, platform])
+  @@unique([productId, platform, locationKey])
   @@index([platform, availability])
+  @@index([locationKey])
 }
 
 model PriceObservation {

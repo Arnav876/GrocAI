@@ -7,6 +7,7 @@ import { toObservation } from "./normalize.js";
 import { validateRawObservations } from "./validate.js";
 import { ConnectorRegistry } from "../connectors/registry.js";
 import { defaultMatcher } from "../matching/matchingService.js";
+import { ListingCandidate, isBetterListingCandidate } from "./listingCandidate.js";
 
 export class IngestionWorker {
   private prisma: PrismaClient;
@@ -75,18 +76,39 @@ export class IngestionWorker {
       },
     });
 
-    const location: LocationContext = {
-      locationKey: job.locationKey || "delhi_110001",
-      pincode: job.locationKey?.split("_")[1] || "110001",
-      city: "Delhi",
-      latitude: 28.6304,
-      longitude: 77.2177,
-      serviceableArea: "Central Delhi",
-    };
+    const jobLocationKey = job.locationKey || "delhi_110001";
+    const storedLocation = await this.prisma.location.findUnique({
+      where: { locationKey: jobLocationKey },
+    });
+
+    const location: LocationContext = storedLocation
+      ? {
+          locationKey: storedLocation.locationKey,
+          pincode: storedLocation.pincode,
+          city: storedLocation.city,
+          latitude: storedLocation.latitude,
+          longitude: storedLocation.longitude,
+          serviceableArea: storedLocation.serviceableArea || undefined,
+        }
+      : {
+          locationKey: jobLocationKey,
+          pincode: jobLocationKey.split("_")[1] || "110001",
+          city: "Delhi",
+          latitude: 28.6304,
+          longitude: 77.2177,
+          serviceableArea: "Central Delhi",
+        };
+
+    if (!storedLocation) {
+      console.warn(
+        `[Worker] No Location row for ${jobLocationKey}; using Delhi fallback coordinates`
+      );
+    }
 
     let totalItemsFound = 0;
     let isBlocked = false;
     let blockReason: string | undefined;
+    const listingCandidates = new Map<string, ListingCandidate>();
 
     try {
       const scraper = getPlatformScraper(platform);
@@ -190,44 +212,67 @@ export class IngestionWorker {
             },
           });
 
-          // If matched with catalog product, update PlatformListing
+          // If matched with catalog product, nominate it for listing update.
+          // Multiple raw observations can map to the same product (pouch,
+          // tetra, combo, unavailable variants). Raw observations are all
+          // persisted; only one deterministic representative becomes the
+          // listing for this run.
           if (matchedCatalogProd && obs.pricePaise !== undefined) {
-            await this.prisma.platformListing.upsert({
-              where: {
-                productId_platform: {
-                  productId: matchedCatalogProd.id,
-                  platform,
-                },
-              },
-              create: {
-                productId: matchedCatalogProd.id,
-                platform,
-                externalId: obs.externalId,
-                currentPricePaise: obs.pricePaise,
-                availability: obs.availability || "available",
-                isStale: false,
-                confidence: obs.confidence,
-                sourceType: obs.sourceType,
-                lastObservedAt: new Date(obs.observedAt),
-                productUrl: obs.productUrl,
-                searchUrl: obs.searchUrl,
-              },
-              update: {
-                externalId: obs.externalId,
-                currentPricePaise: obs.pricePaise,
-                availability: obs.availability || "available",
-                isStale: false,
-                confidence: obs.confidence,
-                sourceType: obs.sourceType,
-                lastObservedAt: new Date(obs.observedAt),
-                productUrl: obs.productUrl || undefined,
-                searchUrl: obs.searchUrl || undefined,
-              },
-            });
+            const observationLocationKey = obs.locationKey || location.locationKey;
+            const listingKey = `${matchedCatalogProd.id}|${platform}|${observationLocationKey}`;
+            const candidate: ListingCandidate = {
+              productId: matchedCatalogProd.id,
+              platform,
+              locationKey: observationLocationKey,
+              observation: obs,
+              confidence: obs.confidence ?? 0,
+            };
+            const existing = listingCandidates.get(listingKey);
+            if (!existing || isBetterListingCandidate(candidate, existing)) {
+              listingCandidates.set(listingKey, candidate);
+            }
           }
 
           totalItemsFound++;
         }
+      }
+
+      for (const candidate of listingCandidates.values()) {
+        const obs = candidate.observation;
+        await this.prisma.platformListing.upsert({
+          where: {
+            productId_platform_locationKey: {
+              productId: candidate.productId,
+              platform: candidate.platform,
+              locationKey: candidate.locationKey,
+            },
+          },
+          create: {
+            productId: candidate.productId,
+            platform: candidate.platform,
+            locationKey: candidate.locationKey,
+            externalId: obs.externalId,
+            currentPricePaise: obs.pricePaise,
+            availability: obs.availability || "available",
+            isStale: false,
+            confidence: candidate.confidence,
+            sourceType: obs.sourceType,
+            lastObservedAt: new Date(obs.observedAt),
+            productUrl: obs.productUrl,
+            searchUrl: obs.searchUrl,
+          },
+          update: {
+            externalId: obs.externalId,
+            currentPricePaise: obs.pricePaise,
+            availability: obs.availability || "available",
+            isStale: false,
+            confidence: candidate.confidence,
+            sourceType: obs.sourceType,
+            lastObservedAt: new Date(obs.observedAt),
+            productUrl: obs.productUrl || undefined,
+            searchUrl: obs.searchUrl || undefined,
+          },
+        });
       }
 
       if (isBlocked) {

@@ -133,6 +133,23 @@ describe("Epic 3 — Platform Parsers with Real & Synthetic Fixtures", () => {
       expect(obs[1].availability).toBe("unavailable");
     });
 
+    it("rejects payloads that belong to a different search query", () => {
+      const fixture = loadFixture("zepto", "search-results.json") as any;
+      const ctx = { platform: "zepto" as const, query: "amul taaza milk", location: mockLocation };
+
+      const mismatched = JSON.parse(JSON.stringify(fixture));
+      mismatched.pageMeta = {
+        refreshResolver: { config: { appParams: { queryTerm: "go zero ice cream" } } },
+      };
+      expect(zeptoScraper.parse(mismatched, ctx)).toEqual([]);
+
+      const matched = JSON.parse(JSON.stringify(fixture));
+      matched.pageMeta = {
+        refreshResolver: { config: { appParams: { queryTerm: "  Amul   Taaza Milk " } } },
+      };
+      expect(zeptoScraper.parse(matched, ctx).length).toBe(2);
+    });
+
     it("handles empty products array gracefully", () => {
       const fixture = loadFixture("zepto", "empty.json");
       const ctx = { platform: "zepto" as const, query: "milk", location: mockLocation };

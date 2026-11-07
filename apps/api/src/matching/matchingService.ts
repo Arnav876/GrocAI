@@ -56,6 +56,43 @@ const CONFLICTING_VARIANT_PAIRS: [RegExp, RegExp][] = [
   [/iodised/i, /rock|black|himalayan/i],
 ];
 
+// Packaging/processing words describe how a product is sold, not which
+// product it is. They are ignored when scoring name similarity so that
+// "1 pack (1 L) Tetra" can match a catalog entry named simply "1 L".
+const NOISE_TOKENS = new Set([
+  "tetra",
+  "pack",
+  "packs",
+  "packet",
+  "packets",
+  "pouch",
+  "pouches",
+  "combo",
+  "combos",
+  "homogenised",
+  "homogenized",
+  "standardised",
+  "standardized",
+  "pasteurised",
+  "pasteurized",
+  "uht",
+  "days",
+  "shelf",
+  "life",
+]);
+
+// Common category words. A missing generic token should not be treated as
+// evidence of a different product, but a missing distinctive token (a brand
+// variant like "Moti", "Calci+", "Slim Trim", "Gold") is a strong signal.
+const GENERIC_TOKENS = new Set([
+  "milk",
+  "toned",
+  "full",
+  "cream",
+  "fresh",
+  "high",
+]);
+
 export class MatchingService {
   constructor(private aiMatcher?: IAIMatcher) {}
 
@@ -133,14 +170,27 @@ export class MatchingService {
     const queryTokens = this.tokenize(queryText);
     const candidateTokens = this.tokenize(candidateText);
 
-    const intersection = queryTokens.filter((t) => candidateTokens.includes(t));
-    const tokenConfidence =
-      queryTokens.length > 0 ? intersection.length / Math.max(queryTokens.length, candidateTokens.length) : 0;
+    const effectiveQueryTokens = queryTokens.filter((t) => !NOISE_TOKENS.has(t));
+    const scoringTokens = effectiveQueryTokens.length > 0 ? effectiveQueryTokens : queryTokens;
 
-    let confidence = tokenConfidence > 0 ? Math.min(1.0, 0.4 + tokenConfidence * 0.6) : 0.0;
+    const brandTokens = new Set(this.tokenize(query.brand || ""));
+    const intersection = scoringTokens.filter((t) => candidateTokens.includes(t));
+    const coverage = scoringTokens.length > 0 ? intersection.length / scoringTokens.length : 0;
+
+    let confidence = coverage > 0 ? Math.min(0.9, 0.4 + coverage * 0.6) : 0.0;
+
+    // A distinctive query token that is absent from the candidate means this
+    // is a different variant (e.g. Moti vs Taaza), not a formatting mismatch.
+    const missingDistinctive = scoringTokens.filter(
+      (t) => !candidateTokens.includes(t) && !GENERIC_TOKENS.has(t) && !brandTokens.has(t)
+    );
+    if (missingDistinctive.length > 0) {
+      confidence = Math.min(confidence, 0.49);
+      reasons.push(`Missing distinctive product token(s): ${missingDistinctive.join(", ")}`);
+    }
 
     // If all significant query tokens are matched in candidate
-    if (queryTokens.length > 0 && queryTokens.every((t) => candidateTokens.includes(t))) {
+    if (scoringTokens.length > 0 && missingDistinctive.length === 0 && coverage === 1) {
       confidence = Math.max(confidence, 0.90);
       reasons.push("All query search tokens matched candidate");
     }

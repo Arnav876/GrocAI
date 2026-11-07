@@ -32,6 +32,24 @@ function slugify(value: string): string {
     .slice(0, 120);
 }
 
+function normalizeQuery(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const cleaned = value.trim().toLowerCase().replace(/\s+/g, " ");
+  return cleaned || null;
+}
+
+/**
+ * Zepto's search BFF echoes the query it answered. Rejecting payloads that
+ * belong to a different query prevents recommendation carousels or stale
+ * searches from being recorded as live results for the requested product.
+ */
+function extractQueryTerm(payload: any): string | null {
+  return (
+    normalizeQuery(payload?.pageMeta?.refreshResolver?.config?.appParams?.queryTerm) ??
+    normalizeQuery(payload?.meta?.related_products_search_term_default)
+  );
+}
+
 function isProductNode(value: any): boolean {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
 
@@ -110,12 +128,6 @@ export class ZeptoScraper implements PlatformScraper {
   }
 
   async interact(page: any, ctx: ScrapeContext): Promise<void> {
-    const existingCards = await page
-      .locator('[data-testid="product-card"]')
-      .count()
-      .catch(() => 0);
-    if (existingCards > 0) return;
-
     let input = page.locator('input[placeholder*="Search"]').first();
     if ((await input.count().catch(() => 0)) === 0) {
       await page
@@ -152,6 +164,15 @@ export class ZeptoScraper implements PlatformScraper {
   parse(payload: unknown, ctx: ScrapeContext): RawObservation[] {
     if (!payload || typeof payload !== "object") {
       console.warn("[ZeptoParser] Malformed payload (not an object)");
+      return [];
+    }
+
+    const responseQuery = extractQueryTerm(payload);
+    const requestedQuery = normalizeQuery(ctx.query);
+    if (responseQuery && requestedQuery && responseQuery !== requestedQuery) {
+      console.warn(
+        `[ZeptoParser] Skipping payload for "${responseQuery}" while searching for "${requestedQuery}"`
+      );
       return [];
     }
 
