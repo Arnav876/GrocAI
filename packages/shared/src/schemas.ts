@@ -333,6 +333,74 @@ export const DataProvenanceSchema = z.object({
   disclaimer: z.string(),
 });
 
+export const ObservationReviewStatusSchema = z.enum([
+  "pending",
+  "auto_matched",
+  "promoted",
+  "dismissed",
+]);
+
+export const UnmatchedObservationSuggestionSchema = z.object({
+  productId: z.string(),
+  name: z.string(),
+  brand: z.string(),
+  categoryId: z.string(),
+  categoryName: z.string(),
+  variant: z.string(),
+  packSize: z.string(),
+  confidence: z.number(),
+  isMatch: z.boolean(),
+  reasons: z.array(z.string()),
+});
+
+export const UnmatchedObservationSummarySchema = z.object({
+  id: z.string(),
+  platform: PlatformIdSchema,
+  rawTitle: z.string(),
+  brand: z.string().nullable(),
+  variant: z.string().nullable(),
+  packSize: z.string().nullable(),
+  pricePaise: z.number().int().nullable(),
+  priceRupees: z.number().nullable(),
+  originalPricePaise: z.number().int().nullable(),
+  availability: AvailabilityStatusSchema,
+  locationKey: z.string(),
+  pincode: z.string().nullable(),
+  productUrl: z.string().nullable(),
+  imageUrl: z.string().nullable(),
+  searchUrl: z.string().nullable(),
+  sourceType: SourceTypeSchema,
+  observedAt: z.string(),
+  confidence: z.number(),
+  reviewStatus: ObservationReviewStatusSchema,
+  suggestions: z.array(UnmatchedObservationSuggestionSchema),
+});
+
+export const UnmatchedObservationsResponseSchema = z.object({
+  total: z.number().int().nonnegative(),
+  limit: z.number().int().positive(),
+  offset: z.number().int().nonnegative(),
+  observations: z.array(UnmatchedObservationSummarySchema),
+});
+
+export const PromoteObservationToExistingSchema = z.object({
+  productId: z.string().min(1),
+  note: z.string().trim().max(500).optional(),
+});
+
+export const PromoteObservationByCreatingProductSchema = z.object({
+  categoryId: z.string().min(1),
+  name: z.string().trim().min(1).max(200).optional(),
+  brand: z.string().trim().min(1).max(100).optional(),
+  variant: z.string().trim().min(1).max(120).optional(),
+  packSize: z.string().trim().min(1).max(80).optional(),
+  note: z.string().trim().max(500).optional(),
+});
+
+export const DismissObservationSchema = z.object({
+  note: z.string().trim().max(500).optional(),
+});
+
 export const ShoppingHandoffRequestSchema = z.object({
   optimizationId: z.string(),
   strategy: z.enum(["cheapest_item_by_item", "cheapest_single_platform", "optimized_multi_platform"]),

@@ -109,6 +109,60 @@ export interface ScrapeJob {
   updatedAt: string;
 }
 
+/**
+ * Review state for a stored price observation. Unmatched observations are
+ * kept as `pending` for a human to promote or dismiss; they never become a
+ * product listing on their own.
+ */
+export type ObservationReviewStatus =
+  | "pending"
+  | "auto_matched"
+  | "promoted"
+  | "dismissed";
+
+export interface UnmatchedObservationSuggestion {
+  productId: string;
+  name: string;
+  brand: string;
+  categoryId: string;
+  categoryName: string;
+  variant: string;
+  packSize: string;
+  confidence: number;
+  isMatch: boolean;
+  reasons: string[];
+}
+
+export interface UnmatchedObservationSummary {
+  id: string;
+  platform: PlatformId;
+  rawTitle: string;
+  brand: string | null;
+  variant: string | null;
+  packSize: string | null;
+  pricePaise: number | null;
+  priceRupees: number | null;
+  originalPricePaise: number | null;
+  availability: AvailabilityStatus;
+  locationKey: string;
+  pincode: string | null;
+  productUrl: string | null;
+  imageUrl: string | null;
+  searchUrl: string | null;
+  sourceType: SourceType;
+  observedAt: string;
+  confidence: number;
+  reviewStatus: ObservationReviewStatus;
+  suggestions: UnmatchedObservationSuggestion[];
+}
+
+export interface UnmatchedObservationsResponse {
+  total: number;
+  limit: number;
+  offset: number;
+  observations: UnmatchedObservationSummary[];
+}
+
 export interface RawObservation {
   platform: PlatformId;
   externalId?: string;

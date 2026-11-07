@@ -103,11 +103,15 @@ model PriceObservation {
   scrapeRunId              String?
   scrapeRun                ScrapeRun? @relation(fields: [scrapeRunId], references: [id], onDelete: SetNull)
   notes                    String[]   @default([])
+  reviewStatus             String     @default("pending") // pending, auto_matched, promoted, dismissed
+  reviewedAt               DateTime?
+  reviewNote               String?
   createdAt                DateTime   @default(now())
 
   @@index([platform, observedAt])
   @@index([productId, platform])
   @@index([scrapeRunId])
+  @@index([reviewStatus, productId])
 }
 
 model ScrapeRun {
@@ -168,13 +172,25 @@ model Location {
 model PlatformFeeRule {
   id                         String   @id @default(cuid())
   platform                   String   // blinkit, zepto, instamart, bigbasket
+  platformId                 String?  // canonical platform id (blinkit | zepto | instamart | bigbasket)
   locationKey                String   @default("delhi_110001")
+  pincode                    String?
+  freeDeliveryThresholdPaise Int?
+  baseDeliveryFeeMinPaise    Int?
+  baseDeliveryFeeMaxPaise    Int?
+  handlingFeeMinPaise        Int?
+  handlingFeeMaxPaise        Int?
+  platformFeeMinPaise        Int?
+  platformFeeMaxPaise        Int?
+  smallCartThresholdPaise    Int?
+  smallCartFeePaise          Int?
+  hasDynamicUnknownFees      Boolean  @default(false)
+  provenanceNotes            String?
   deliveryFeePaise           Int?     // null when unknown
   handlingFeePaise           Int?     // null when unknown
   handlingFeeRangeMinPaise   Int?
   handlingFeeRangeMaxPaise   Int?
   platformFeePaise           Int?     // null when unknown
-  freeDeliveryThresholdPaise Int?
   minimumOrderValuePaise     Int?
   sourceType                 String   @default("mock")
   observedAt                 DateTime @default(now())
@@ -184,6 +200,78 @@ model PlatformFeeRule {
 
   @@unique([platform, locationKey])
   @@index([platform, locationKey])
+  @@index([platformId, pincode])
+}
+
+enum BaseDimension {
+  VOLUME
+  WEIGHT
+  COUNT
+}
+
+model CanonicalProduct {
+  id               String               @id @default(cuid())
+  slug             String               @unique
+  name             String
+  brand            String
+  category         String
+  variant          String
+  baseDimension    BaseDimension
+  standardPackSize String
+  aliases          String[]             @default([])
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  observations     PlatformObservation[]
+  candidateMatches CandidateMatch[]
+
+  @@index([slug])
+  @@index([category])
+  @@index([brand])
+}
+
+model PlatformObservation {
+  id                       String            @id @default(cuid())
+  name                     String
+  brand                    String?
+  quantity                 String
+  pricePaise               Int
+  originalPricePaise       Int
+  discountPercentage       Int
+  availabilityStatus       String            // IN_STOCK | OUT_OF_STOCK | LOW_STOCK | UNAVAILABLE
+  platformId               String            // blinkit | zepto | instamart | bigbasket
+  productUrl               String
+  imageUrl                 String?
+  pincode                  String
+  observedAt               DateTime
+  dataSource               String            // headed_worker | manual_assisted | seed_fixture | cached_snapshot
+  verificationStatus       String            // VERIFIED | UNVERIFIED | STALE | FLAGGED_ANOMALY
+  normalizedUnitPricePaise Int?
+  canonicalProductId       String?
+  canonicalProduct         CanonicalProduct? @relation(fields: [canonicalProductId], references: [id], onDelete: SetNull)
+  candidateMatches         CandidateMatch[]
+  createdAt                DateTime          @default(now())
+
+  @@index([platformId, pincode, observedAt])
+  @@index([canonicalProductId, pincode])
+  @@index([pincode])
+}
+
+model CandidateMatch {
+  id                 String              @id @default(cuid())
+  observationId      String
+  observation        PlatformObservation @relation(fields: [observationId], references: [id], onDelete: Cascade)
+  canonicalProductId String
+  canonicalProduct   CanonicalProduct    @relation(fields: [canonicalProductId], references: [id], onDelete: Cascade)
+  confidenceScore    Float
+  matchReasons       Json
+  guardFlags         Json
+  reviewStatus       String              @default("PENDING") // PENDING | APPROVED | REJECTED
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  @@index([reviewStatus])
+  @@index([observationId])
+  @@index([canonicalProductId])
 }
 
 model GroceryList {
