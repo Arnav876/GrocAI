@@ -1,5 +1,6 @@
 import {
   CategoryInfo,
+  DataProvenance,
   OptimizationOption,
   OptimizationRequestSchema,
   OptimizationResponse,
@@ -7,11 +8,13 @@ import {
   PlatformHealthStatus,
   PlatformId,
   ProductSummary,
+  ProvenanceListingRow,
   ShoppingHandoffResponse,
   SUPPORTED_PLATFORMS,
   PLATFORM_METADATA,
   paiseToRupees,
   rupeesToPaise,
+  summarizeProvenance,
   FeeSummary,
   OptimizationLineItem,
 } from "@groqai/shared";
@@ -74,6 +77,25 @@ export class MockApiService {
         ],
       };
     });
+  }
+
+  async getDataProvenance(pincode: string = "110001"): Promise<DataProvenance> {
+    const locationKey = `delhi_${pincode}`;
+    const rows: ProvenanceListingRow[] = [];
+
+    for (const product of MOCK_PRODUCTS) {
+      for (const [platform, price] of Object.entries(product.platformPrices)) {
+        if (!price || price.pricePaise === undefined) continue;
+        rows.push({
+          platform,
+          sourceType: price.sourceType || "mock",
+          availability: price.availability || "available",
+          lastObservedAt: new Date(price.observedAt || Date.now()),
+        });
+      }
+    }
+
+    return summarizeProvenance(rows, locationKey);
   }
 
   async createOptimization(payload: OptimizationRequestInput): Promise<OptimizationResponse> {

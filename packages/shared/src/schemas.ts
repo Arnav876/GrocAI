@@ -280,6 +280,59 @@ export const OptimizationResponseSchema = z.object({
   warnings: z.array(z.string()),
 });
 
+export const SourceTypeCountsSchema = z.object({
+  authorized_api: z.number().int().nonnegative(),
+  partner_feed: z.number().int().nonnegative(),
+  permitted_page: z.number().int().nonnegative(),
+  manual: z.number().int().nonnegative(),
+  mock: z.number().int().nonnegative(),
+});
+
+export const VerificationCountsSchema = z.object({
+  live_verified: z.number().int().nonnegative(),
+  cached: z.number().int().nonnegative(),
+  stale: z.number().int().nonnegative(),
+  unverified: z.number().int().nonnegative(),
+  unavailable: z.number().int().nonnegative(),
+  estimate: z.number().int().nonnegative(),
+});
+
+export const DataProvenanceCountsSchema = z.object({
+  totalListings: z.number().int().nonnegative(),
+  availableListings: z.number().int().nonnegative(),
+  liveSourceListings: z.number().int().nonnegative(),
+  manualListings: z.number().int().nonnegative(),
+  mockListings: z.number().int().nonnegative(),
+  unknownSourceListings: z.number().int().nonnegative(),
+  liveVerifiedListings: z.number().int().nonnegative(),
+  cachedListings: z.number().int().nonnegative(),
+  staleListings: z.number().int().nonnegative(),
+  unavailableListings: z.number().int().nonnegative(),
+  unverifiedListings: z.number().int().nonnegative(),
+  estimateListings: z.number().int().nonnegative(),
+});
+
+export const DataProvenancePlatformSummarySchema = z.object({
+  platform: PlatformIdSchema,
+  totalListings: z.number().int().nonnegative(),
+  bySourceType: SourceTypeCountsSchema,
+  byVerification: VerificationCountsSchema,
+  lastObservedAt: z.string().nullable(),
+});
+
+export const DataProvenanceSchema = z.object({
+  locationKey: z.string(),
+  pincode: z.string(),
+  generatedAt: z.string(),
+  status: z.enum(["live", "mixed", "mock", "empty"]),
+  counts: DataProvenanceCountsSchema,
+  bySourceType: SourceTypeCountsSchema,
+  byVerification: VerificationCountsSchema,
+  lastObservedAt: z.string().nullable(),
+  platforms: z.array(DataProvenancePlatformSummarySchema),
+  disclaimer: z.string(),
+});
+
 export const ShoppingHandoffRequestSchema = z.object({
   optimizationId: z.string(),
   strategy: z.enum(["cheapest_item_by_item", "cheapest_single_platform", "optimized_multi_platform"]),

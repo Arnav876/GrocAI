@@ -391,3 +391,46 @@ export interface PlatformHealthStatus {
   errorRate: number;
   notes: string[];
 }
+
+export type DataProvenanceStatus = "live" | "mixed" | "mock" | "empty";
+
+export interface DataProvenanceCounts {
+  totalListings: number;
+  availableListings: number;
+  liveSourceListings: number;
+  manualListings: number;
+  mockListings: number;
+  unknownSourceListings: number;
+  liveVerifiedListings: number;
+  cachedListings: number;
+  staleListings: number;
+  unavailableListings: number;
+  unverifiedListings: number;
+  estimateListings: number;
+}
+
+export interface DataProvenancePlatformSummary {
+  platform: PlatformId;
+  totalListings: number;
+  bySourceType: Record<SourceType, number>;
+  byVerification: Record<PriceVerificationStatus, number>;
+  lastObservedAt: string | null;
+}
+
+/**
+ * Aggregate of stored PlatformListing provenance for a location. This is a
+ * data-honesty surface: it reports what is actually stored (live-captured,
+ * manually entered, or simulated) and never upgrades an estimate to live.
+ */
+export interface DataProvenance {
+  locationKey: string;
+  pincode: string;
+  generatedAt: string;
+  status: DataProvenanceStatus;
+  counts: DataProvenanceCounts;
+  bySourceType: Record<SourceType, number>;
+  byVerification: Record<PriceVerificationStatus, number>;
+  lastObservedAt: string | null;
+  platforms: DataProvenancePlatformSummary[];
+  disclaimer: string;
+}

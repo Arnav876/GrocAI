@@ -67,7 +67,24 @@ curl -X PUT http://localhost:5001/api/fees/bigbasket \
 
 Manual entries are stamped `sourceType: "manual"` and appear in optimization warnings; seeded values are stamped `mock` and also produce a verification warning.
 
-## 3. Triggering Ingestion Jobs
+## 3. Data Provenance
+
+The web banner reads a live aggregate instead of hardcoding a mock warning:
+
+```bash
+curl 'http://localhost:5001/api/data-provenance?pincode=110001'
+```
+
+It returns counts by `sourceType` (`permitted_page`, `authorized_api`, `partner_feed`, `manual`, `mock`) and verification status (`live_verified`, `cached`, `stale`, `unavailable`, `estimate`, `unverified`) plus a `status` of `live`, `mixed`, `mock`, or `empty`.
+
+Honesty rules:
+- `live` requires every listing at the location to come from a live source with no stale or simulated rows.
+- `mock` means all listings are simulated seed data.
+- `mixed` covers any combination of live, manual, simulated, stale, or unrecognized sources.
+- An unrecognized source is counted as `unknownSourceListings` and never promoted to live.
+- If the aggregate cannot be fetched, the UI shows `DATA STATUS UNKNOWN` rather than assuming live or mock.
+
+## 4. Triggering Ingestion Jobs
 
 ### Via HTTP API
 You can enqueue jobs via the Express API:
@@ -95,7 +112,7 @@ curl -s http://localhost:5001/api/ingestion/jobs/<JOB_ID> | jq
 
 ---
 
-## 4. Submitting Manual Instamart / Offline Prices
+## 5. Submitting Manual Instamart / Offline Prices
 
 Since Swiggy Instamart is routed through assisted/manual capture to respect anti-bot gates:
 ```bash
@@ -119,7 +136,7 @@ Or use the frontend UI:
 
 ---
 
-## 5. Recovering Blocked Platforms
+## 6. Recovering Blocked Platforms
 
 When a platform responds with HTTP 403, 202, or a PerimeterX/Cloudflare challenge:
 1. `ChallengeDetector` halts the scraper immediately to avoid sending suspicious traffic.
@@ -148,7 +165,7 @@ When a platform responds with HTTP 403, 202, or a PerimeterX/Cloudflare challeng
 
 ---
 
-## 6. Running with Xvfb on Headless Linux Hosts
+## 7. Running with Xvfb on Headless Linux Hosts
 
 Headed Chromium requires an X11 display. On headless cloud servers (e.g. AWS EC2, GCP, Ubuntu server), run the worker inside an Xvfb virtual framebuffer:
 
@@ -164,7 +181,7 @@ xvfb-run --server-args="-screen 0 1280x800x24" npm run worker --workspace=apps/a
 
 ---
 
-## 7. Emergency Kill Switch
+## 8. Emergency Kill Switch
 
 If a connector behaves erratically or sends excessive requests, use the admin kill switch:
 ```bash
@@ -177,7 +194,7 @@ curl -X DELETE http://localhost:5001/api/admin/platforms/blinkit/kill-switch
 
 ---
 
-## 8. Admin Authentication & Request Tracing
+## 9. Admin Authentication & Request Tracing
 
 Set `ADMIN_API_KEY` in production. When present, `/api/admin/*` and `PUT /api/fees/:platform` require either `x-admin-key: <key>` or `Authorization: Bearer <key>`. User-facing refresh endpoints remain open because they only enqueue read-only ingestion jobs. When the key is unset (local development), admin routes stay open and responses include `X-Admin-Auth: disabled`.
 

@@ -4,3 +4,4 @@ export * from "./money.js";
 export * from "./freshness.js";
 export * from "./constants.js";
 export * from "./unitNormalizer.js";
+export * from "./provenance.js";

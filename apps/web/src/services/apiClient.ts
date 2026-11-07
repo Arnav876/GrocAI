@@ -1,5 +1,7 @@
 import {
   CategoryInfo,
+  DataProvenance,
+  DataProvenanceSchema,
   OptimizationResponse,
   OptimizationResponseSchema,
   PlatformHealthStatus,
@@ -35,6 +37,17 @@ export class GroqApiClient {
     const res = await fetch(`${API_BASE_URL}/api/categories`);
     if (!res.ok) throw new Error(`Failed to fetch categories: ${res.statusText}`);
     return res.json();
+  }
+
+  async getDataProvenance(pincode: string = "110001"): Promise<DataProvenance> {
+    if (this.isUsingMock()) {
+      return mockApiService.getDataProvenance(pincode);
+    }
+    const params = new URLSearchParams({ pincode });
+    const res = await fetch(`${API_BASE_URL}/api/data-provenance?${params.toString()}`);
+    if (!res.ok) throw new Error(`Failed to fetch data provenance: ${res.statusText}`);
+    const data = await res.json();
+    return DataProvenanceSchema.parse(data);
   }
 
   async searchProducts(

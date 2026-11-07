@@ -24,6 +24,7 @@ import { createNLParser } from "./services/naturalLanguageService.js";
 import { CatalogBackgroundService } from "./services/catalogJobs.js";
 import { GrocerySyncService } from "./services/grocerySyncService.js";
 import { FeeIntelligenceService } from "./services/feeIntelligence.js";
+import { DataProvenanceService } from "./services/dataProvenance.js";
 import { PostgresScrapeQueue } from "./ingestion/queue.js";
 import { toObservation } from "./ingestion/normalize.js";
 
@@ -54,6 +55,7 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
   const syncService = new GrocerySyncService(prisma, registry);
   const scrapeQueue = new PostgresScrapeQueue(prisma);
   const feeIntelligence = new FeeIntelligenceService(prisma);
+  const dataProvenance = new DataProvenanceService(prisma);
   const nlParser = createNLParser();
 
   // Live refresh is handled by the ingestion queue/worker. Instamart is
@@ -1151,6 +1153,18 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
     });
   });
 
+  // GET /api/data-provenance?pincode=110001&locationKey=delhi_110001
+  app.get("/api/data-provenance", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const pincode = (req.query.pincode as string) || "110001";
+      const locationKey = (req.query.locationKey as string) || `delhi_${pincode}`;
+      const provenance = await dataProvenance.getForLocation(locationKey);
+      return res.json(provenance);
+    } catch (err) {
+      next(err);
+    }
+  });
+
   // GET /api/fees?locationKey=delhi_110001
   app.get("/api/fees", async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -1357,6 +1371,9 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
         "/api/categories": { get: { summary: "List grocery categories" } },
         "/api/products/search": { get: { summary: "Search grocery products with multi-store prices" } },
         "/api/products/{id}": { get: { summary: "Get product details with platform listings" } },
+        "/api/data-provenance": {
+          get: { summary: "Aggregate live/manual/mock listing provenance for a pincode" },
+        },
         "/api/fees": { get: { summary: "Read location-scoped fee structures with provenance" } },
         "/api/fees/{platform}": {
           put: { summary: "Save manually verified fee structure (admin auth when configured)" },
