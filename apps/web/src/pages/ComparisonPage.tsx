@@ -12,6 +12,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { apiClient } from "../services/apiClient.js";
+import { describeRefreshOutcome } from "../services/refreshOutcome.js";
 import {
   ProductSummary,
   SUPPORTED_PLATFORMS,
@@ -54,26 +55,11 @@ export const ComparisonPage: React.FC = () => {
         setAllProducts((prev) => prev.map((p) => (p.id === refreshed.id ? refreshed : p)));
       }
 
-      if (outcome.completed.length > 0) {
-        setRefreshMessage({
-          text: `Live prices and stock refreshed from ${outcome.completed.length} platform job(s).`,
-        });
-      } else if (outcome.blocked.length > 0) {
-        setRefreshMessage({
-          text: "Platforms blocked automated capture (rate limit or login wall). Verified cached prices were kept.",
-          isError: true,
-        });
-      } else if (outcome.failed.length > 0) {
-        setRefreshMessage({
-          text: "Live refresh failed. Verified cached prices were kept unchanged.",
-          isError: true,
-        });
-      } else {
-        setRefreshMessage({
-          text: "Refresh is still queued (no worker picked it up yet). Showing cached prices.",
-          isError: true,
-        });
-      }
+      const outcomeMessage = describeRefreshOutcome(outcome, res.refresh.jobIds.length);
+      setRefreshMessage({
+        text: outcomeMessage.text,
+        isError: outcomeMessage.isError,
+      });
     } catch (err: any) {
       setRefreshMessage({
         text: `Sync error (${err.message}). Kept verified cached data without overwriting.`,

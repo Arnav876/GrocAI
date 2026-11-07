@@ -30,7 +30,7 @@ npm run worker:once --workspace=apps/api
 ```
 
 ### Freshness Scheduler
-The scheduler flags listings older than 6 hours as stale and enqueues one polite refresh job per platform/location (Instamart is skipped). It reuses an existing queued/running job instead of piling up duplicates.
+The scheduler flags listings older than 6 hours as stale and enqueues one polite refresh job per platform/location (Instamart is skipped). It reuses an existing queued/running job instead of piling up duplicates, and skips a platform/location for `BLOCKED_PLATFORM_COOLDOWN_MS` (default 30 minutes) after a blocked capture, so an Akamai/Cloudflare denial is not retried every cycle.
 ```bash
 # Run one maintenance cycle and exit
 npm run scheduler:once --workspace=apps/api
@@ -138,30 +138,35 @@ Or use the frontend UI:
 
 ## 6. Recovering Blocked Platforms
 
-When a platform responds with HTTP 403, 202, or a PerimeterX/Cloudflare challenge:
-1. `ChallengeDetector` halts the scraper immediately to avoid sending suspicious traffic.
-2. The job is marked as `failed` or `blocked` with the error `Anti-bot challenge detected`.
-3. The platform enters an exponential backoff state (10m - 30m cooldown).
+When a platform responds with HTTP 403, 429, 202, or a PerimeterX/Cloudflare/Akamai challenge:
+1. `ChallengeDetector` or the blocked-target-response guard halts the scraper immediately to avoid sending suspicious traffic.
+2. The run is recorded as `blocked` with the exact reason (including denied data-endpoint URLs), instead of being reported as a successful empty search.
+3. The job becomes terminal (`blocked`); the scheduler may enqueue a polite retry on its next cycle. There is no automatic backoff beyond the scheduler interval and per-request rate limiter.
+
+### Current BigBasket finding (2026-11-07)
+BigBasket serves the HTML shell but its `listing-svc/v2/products` endpoint returns `HTTP 403 Access Denied` from the Akamai edge for the stored browser session. The worker now reports this as blocked and preserves the previous stale price rather than overwriting it. Do **not** attempt to bypass the edge control. Use manual/assisted capture until a permitted feed or a valid human-refreshed session is available.
 
 ### Recovery Steps:
 1. Check blocked platforms:
    ```bash
    curl -s http://localhost:5001/api/ingestion/status | jq '.blockedPlatforms'
    ```
-2. Inspect browser profile directory:
-   Profiles are saved in `apps/api/.browser-profiles/<platform>`.
-3. If necessary, launch an interactive headed session to refresh human cookies:
+2. Inspect browser profile directories (from `apps/api`):
    ```bash
-   node -e '
+   ls -la .cache/groqai
+   ```
+3. If necessary, launch an interactive headed session to refresh human cookies (for a platform whose terms permit this):
+   ```bash
+   cd apps/api && node -e '
      import("playwright").then(async ({ chromium }) => {
-       const ctx = await chromium.launchPersistentContext("apps/api/.browser-profiles/zepto", { headless: false });
+       const ctx = await chromium.launchPersistentContext(".cache/groqai/zepto", { headless: false });
        const page = await ctx.newPage();
        await page.goto("https://www.zepto.com");
        console.log("Press Ctrl+C when session is ready");
      });
    '
    ```
-4. Reset the cooldown timer in `apps/api/src/ingestion/browser/challengeDetector.ts` or restart the worker process.
+4. If a challenge persists, leave the platform blocked and use manual price entry; never attempt CAPTCHA solving, fingerprint spoofing, or edge-control evasion.
 
 ---
 

@@ -52,4 +52,32 @@ describe("Phase 2 — Scheduler refresh enqueueing", () => {
     });
     expect(count).toBe(1);
   });
+
+  it("backs off a platform/location with a recent blocked job", async () => {
+    await prisma.scrapeJob.create({
+      data: {
+        platform: "bigbasket",
+        queries: ["Amul Taaza Toned Fresh Milk"],
+        locationKey: testLocation,
+        status: "blocked",
+        error: "HTTP 403 Access Denied",
+        completedAt: new Date(),
+      },
+    });
+
+    const result = await (service as any).enqueueStaleRefreshes([
+      {
+        platform: "bigbasket",
+        locationKey: testLocation,
+        product: { name: "Amul Taaza Toned Fresh Milk" },
+      },
+    ]);
+
+    expect(result.enqueued).toBe(0);
+    expect(result.skipped).toContain(`bigbasket@${testLocation} (blocked cooldown)`);
+    const bigbasketJobs = await prisma.scrapeJob.count({
+      where: { locationKey: testLocation, platform: "bigbasket" },
+    });
+    expect(bigbasketJobs).toBe(1);
+  });
 });

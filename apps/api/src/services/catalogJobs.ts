@@ -16,6 +16,7 @@ export class CatalogBackgroundService {
   private timer: NodeJS.Timeout | null = null;
   private isRunning = false;
   private queue: PostgresScrapeQueue;
+  private blockedPlatformCooldownMs: number;
   private platformJobEnabled: Record<PlatformId, boolean> = {
     blinkit: true,
     zepto: true,
@@ -34,9 +35,13 @@ export class CatalogBackgroundService {
   constructor(
     private prisma: PrismaClient,
     private registry: ConnectorRegistry,
-    queue?: PostgresScrapeQueue
+    queue?: PostgresScrapeQueue,
+    options?: { blockedPlatformCooldownMs?: number }
   ) {
     this.queue = queue || new PostgresScrapeQueue(prisma);
+    this.blockedPlatformCooldownMs =
+      options?.blockedPlatformCooldownMs ??
+      parseInt(process.env.BLOCKED_PLATFORM_COOLDOWN_MS || String(30 * 60 * 1000), 10);
   }
 
   setPlatformJobEnabled(platform: PlatformId, enabled: boolean): void {
@@ -167,6 +172,25 @@ export class CatalogBackgroundService {
 
       if (activeJob) {
         skipped.push(`${group.platform}@${group.locationKey}`);
+        continue;
+      }
+
+      // A recent access denial means the platform is deliberately gating this
+      // session. Back off instead of retrying every scheduler cycle.
+      const cooldownCutoff = new Date(Date.now() - this.blockedPlatformCooldownMs);
+      const recentlyBlocked = await this.prisma.scrapeJob.findFirst({
+        where: {
+          platform: group.platform,
+          locationKey: group.locationKey,
+          status: "blocked",
+          completedAt: { gte: cooldownCutoff },
+        },
+        orderBy: { completedAt: "desc" },
+        select: { id: true },
+      });
+
+      if (recentlyBlocked) {
+        skipped.push(`${group.platform}@${group.locationKey} (blocked cooldown)`);
         continue;
       }
 

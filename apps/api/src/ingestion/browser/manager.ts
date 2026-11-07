@@ -3,6 +3,10 @@ import { PlatformId, LocationContext, RawObservation } from "@groqai/shared";
 import { getBrowserSessionConfig } from "./session.js";
 import { rateLimiter } from "./rateLimiter.js";
 import { detectChallenge } from "./challengeDetector.js";
+import {
+  BlockedTargetResponse,
+  describeBlockedTargetResponse,
+} from "./targetResponses.js";
 import { PlatformScraper, ScrapeContext } from "../types.js";
 
 export class BrowserManager {
@@ -64,6 +68,7 @@ export class BrowserManager {
     const context = await this.getContext(platform, location);
     let page: Page | null = null;
     const interceptedPayloads: unknown[] = [];
+    const blockedTargetResponses: BlockedTargetResponse[] = [];
     let mainStatus: number | undefined;
 
     const isTargetResponse = (url: string): boolean => {
@@ -79,7 +84,23 @@ export class BrowserManager {
       // parsing only the first response is not reliable.
       page.on("response", async (response) => {
         const url = response.url();
-        if (!isTargetResponse(url) || response.status() !== 200) return;
+        if (!isTargetResponse(url)) return;
+
+        const status = response.status();
+        if (status !== 200) {
+          // Denials on the data endpoint are access-control/bot blocks, not
+          // empty results. Capture a short body sample for honest reporting.
+          if (status === 403 || status === 429 || status === 503) {
+            let bodySnippet = "";
+            try {
+              bodySnippet = (await response.text()).slice(0, 300);
+            } catch {
+              // Body may be unavailable after navigation; status is enough.
+            }
+            blockedTargetResponses.push({ status, url, bodySnippet });
+          }
+          return;
+        }
 
         const contentType = (response.headers()["content-type"] || "").toLowerCase();
         if (!contentType.includes("json")) return;
@@ -183,6 +204,16 @@ export class BrowserManager {
           isBlocked: true,
           error: "HTTP 202 Interstitial: no product data was served after challenge",
         };
+      }
+
+      const blockedReason = describeBlockedTargetResponse(
+        platform,
+        blockedTargetResponses
+      );
+      if (blockedReason) {
+        console.warn(`[BrowserManager] ${blockedReason}`);
+        await this.closeContext(platform);
+        return { observations: [], isBlocked: true, error: blockedReason };
       }
 
       console.warn(

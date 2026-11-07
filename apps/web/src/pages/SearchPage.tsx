@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Search, Filter, SlidersHorizontal, AlertCircle, RefreshCw, PlusCircle } from "lucide-react";
 import { apiClient } from "../services/apiClient.js";
+import { describeRefreshOutcome } from "../services/refreshOutcome.js";
 import { ProductSummary, SUPPORTED_PLATFORMS, PLATFORM_METADATA } from "@groqai/shared";
 import { ProductCard } from "../components/products/ProductCard.js";
 import { ManualPriceModal } from "../components/products/ManualPriceModal.js";
@@ -82,26 +83,11 @@ export const SearchPage: React.FC = () => {
 
       setProducts(await apiClient.searchProducts(searchTerm, selectedCategory, false, pincode));
 
-      if (outcome.completed.length > 0) {
-        setRefreshNotice({
-          text: `Live refresh completed on ${outcome.completed.length} job${outcome.completed.length > 1 ? "s" : ""}. Prices below reflect the latest verified observations.`,
-        });
-      } else if (outcome.blocked.length > 0) {
-        setRefreshNotice({
-          text: "Platforms blocked automated capture (rate limit or login wall). Cached prices were kept unchanged.",
-          isError: true,
-        });
-      } else if (outcome.failed.length > 0) {
-        setRefreshNotice({
-          text: "Live refresh failed. Cached prices were kept unchanged.",
-          isError: true,
-        });
-      } else {
-        setRefreshNotice({
-          text: "Refresh is still queued (no worker picked it up yet). Showing cached prices.",
-          isError: true,
-        });
-      }
+      const outcomeMessage = describeRefreshOutcome(outcome, enqueued.jobIds.length);
+      setRefreshNotice({
+        text: outcomeMessage.text,
+        isError: outcomeMessage.isError,
+      });
     } catch (err: any) {
       setRefreshNotice({ text: `Refresh error: ${err.message}. Cached prices were kept.`, isError: true });
     } finally {
