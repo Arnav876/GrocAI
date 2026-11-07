@@ -2,6 +2,7 @@ import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import { randomUUID, timingSafeEqual } from "crypto";
 import { PrismaClient } from "@prisma/client";
 import {
   OptimizationRequestSchema,
@@ -26,8 +27,28 @@ import { FeeIntelligenceService } from "./services/feeIntelligence.js";
 import { PostgresScrapeQueue } from "./ingestion/queue.js";
 import { toObservation } from "./ingestion/normalize.js";
 
-export function createServer(prisma: PrismaClient) {
+export interface ServerOptions {
+  /**
+   * Shared secret for /api/admin and fee-write endpoints. When omitted,
+   * process.env.ADMIN_API_KEY is used. When neither is set, admin routes stay
+   * open for local development and responses advertise that explicitly.
+   */
+  adminApiKey?: string | null;
+}
+
+function timingSafeStringEqual(a: string, b: string): boolean {
+  const bufferA = Buffer.from(a);
+  const bufferB = Buffer.from(b);
+  if (bufferA.length !== bufferB.length) return false;
+  return timingSafeEqual(bufferA, bufferB);
+}
+
+export function createServer(prisma: PrismaClient, options: ServerOptions = {}) {
   const app = express();
+  const adminApiKey =
+    options.adminApiKey !== undefined
+      ? options.adminApiKey
+      : process.env.ADMIN_API_KEY || null;
   const registry = new ConnectorRegistry(prisma);
   const catalogJobs = new CatalogBackgroundService(prisma, registry);
   const syncService = new GrocerySyncService(prisma, registry);
@@ -86,6 +107,43 @@ export function createServer(prisma: PrismaClient) {
 
   app.use(express.json());
 
+  // Correlation ID for every request. Clients may supply one for tracing;
+  // otherwise a UUID is generated and returned in the response header.
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const supplied = req.get("x-request-id");
+    const requestId =
+      supplied && /^[A-Za-z0-9._:-]{1,128}$/.test(supplied) ? supplied : randomUUID();
+    res.locals.requestId = requestId;
+    res.setHeader("X-Request-Id", requestId);
+    next();
+  });
+
+  const requireAdminAuth = (req: Request, res: Response, next: NextFunction) => {
+    if (!adminApiKey) {
+      res.setHeader("X-Admin-Auth", "disabled");
+      return next();
+    }
+
+    const bearer = req.get("authorization")?.startsWith("Bearer ")
+      ? req.get("authorization")!.slice("Bearer ".length)
+      : undefined;
+    const provided = req.get("x-admin-key") || bearer;
+
+    if (provided && timingSafeStringEqual(provided, adminApiKey)) {
+      res.setHeader("X-Admin-Auth", "ok");
+      return next();
+    }
+
+    return res.status(401).json({
+      error: "Admin authentication required",
+      requestId: res.locals.requestId,
+    });
+  };
+
+  // Protect destructive/admin-only operations. User-facing refresh endpoints
+  // remain open because they only enqueue read-only ingestion jobs.
+  app.use("/api/admin", requireAdminAuth);
+
   // Structured Logging Middleware (sanitizes addresses, tokens, cookies)
   app.use((req: Request, res: Response, next: NextFunction) => {
     const start = Date.now();
@@ -93,6 +151,7 @@ export function createServer(prisma: PrismaClient) {
       const duration = Date.now() - start;
       const logEntry = {
         timestamp: new Date().toISOString(),
+        requestId: res.locals.requestId,
         method: req.method,
         path: req.path,
         status: res.statusCode,
@@ -114,6 +173,7 @@ export function createServer(prisma: PrismaClient) {
       uptime: process.uptime(),
       mode: process.env.NODE_ENV || "development",
       timestamp: new Date().toISOString(),
+      adminAuthEnabled: Boolean(adminApiKey),
       platforms: SUPPORTED_PLATFORMS.map((pid) => ({
         id: pid,
         name: PLATFORM_METADATA[pid].name,
@@ -1108,7 +1168,7 @@ export function createServer(prisma: PrismaClient) {
   });
 
   // PUT /api/fees/:platform
-  app.put("/api/fees/:platform", async (req: Request, res: Response) => {
+  app.put("/api/fees/:platform", requireAdminAuth, async (req: Request, res: Response) => {
     try {
       const platform = req.params.platform as PlatformId;
       if (!SUPPORTED_PLATFORMS.includes(platform)) {
@@ -1297,6 +1357,10 @@ export function createServer(prisma: PrismaClient) {
         "/api/categories": { get: { summary: "List grocery categories" } },
         "/api/products/search": { get: { summary: "Search grocery products with multi-store prices" } },
         "/api/products/{id}": { get: { summary: "Get product details with platform listings" } },
+        "/api/fees": { get: { summary: "Read location-scoped fee structures with provenance" } },
+        "/api/fees/{platform}": {
+          put: { summary: "Save manually verified fee structure (admin auth when configured)" },
+        },
         "/api/optimizations": { post: { summary: "Calculate 3-strategy basket optimization" } },
         "/api/optimizations/{id}": { get: { summary: "Retrieve optimization result" } },
         "/api/platforms": { get: { summary: "List platform connector capabilities and health" } },
@@ -1311,6 +1375,7 @@ export function createServer(prisma: PrismaClient) {
     res.status(500).json({
       error: "Internal Server Error",
       message: err.message || "An unexpected error occurred",
+      requestId: res.locals.requestId,
     });
   });
 

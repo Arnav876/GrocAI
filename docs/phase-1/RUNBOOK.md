@@ -169,13 +169,17 @@ xvfb-run --server-args="-screen 0 1280x800x24" npm run worker --workspace=apps/a
 If a connector behaves erratically or sends excessive requests, use the admin kill switch:
 ```bash
 # Deactivate Blinkit connector immediately
-curl -X POST http://localhost:5001/api/admin/platforms/blinkit/kill-switch \
-  -H "Content-Type: application/json" \
-  -d '{"active": true}'
+curl -X POST http://localhost:5001/api/admin/platforms/blinkit/kill-switch
 
 # Re-enable connector
-curl -X POST http://localhost:5001/api/admin/platforms/blinkit/kill-switch \
-  -H "Content-Type: application/json" \
-  -d '{"active": false}'
+curl -X DELETE http://localhost:5001/api/admin/platforms/blinkit/kill-switch
 ```
+
+---
+
+## 8. Admin Authentication & Request Tracing
+
+Set `ADMIN_API_KEY` in production. When present, `/api/admin/*` and `PUT /api/fees/:platform` require either `x-admin-key: <key>` or `Authorization: Bearer <key>`. User-facing refresh endpoints remain open because they only enqueue read-only ingestion jobs. When the key is unset (local development), admin routes stay open and responses include `X-Admin-Auth: disabled`.
+
+Every response includes `X-Request-Id` (client-supplied values are accepted when alphanumeric) and structured logs include the same correlation ID. Error responses also carry `requestId` for tracing.
 
