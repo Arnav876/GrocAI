@@ -101,16 +101,33 @@ export const HandoffPage: React.FC = () => {
       <div className="bg-amber-50 rounded-2xl border-2 border-amber-300 p-5 mb-8 shadow-sm">
         <div className="flex items-start gap-3">
           <ShieldCheck className="w-6 h-6 text-amber-700 shrink-0 mt-0.5" />
-          <div className="space-y-1">
-            <h2 className="text-sm font-bold text-amber-950 uppercase tracking-wide">
-              Official Checkout Disclaimer & Legal Notice
+          <div className="space-y-1 w-full">
+            <h2 className="text-sm font-bold text-amber-950 uppercase tracking-wide flex items-center justify-between">
+              <span>Official Checkout Disclaimer & Legal Notice</span>
+              <span className="text-[10px] bg-amber-200/80 text-amber-900 px-2 py-0.5 rounded font-bold">
+                NullCartAdapter Active
+              </span>
             </h2>
             <p className="text-xs text-amber-900 leading-relaxed font-semibold">
               {handoff.notice}
             </p>
             <p className="text-[11px] text-amber-800 leading-relaxed">
-              GroqAI is an optimization tool and NEVER processes payments, completion tokens, or credentials. Use the links and checklists below to review and pay inside each merchant's official application.
+              GrocAI is an optimization tool and NEVER processes payments, OTPs, or user credentials. Use the verified search links and Markdown checklists below to review and pay inside each merchant's official application.
             </p>
+            <div className="flex flex-wrap gap-2 pt-2 text-[10px] font-bold">
+              <span className="px-2 py-0.5 rounded bg-amber-200/60 text-amber-900 border border-amber-300">
+                createCart: false
+              </span>
+              <span className="px-2 py-0.5 rounded bg-amber-200/60 text-amber-900 border border-amber-300">
+                automatedCheckout: false
+              </span>
+              <span className="px-2 py-0.5 rounded bg-amber-200/60 text-amber-900 border border-amber-300">
+                officialSearchLinks: true
+              </span>
+              <span className="px-2 py-0.5 rounded bg-amber-200/60 text-amber-900 border border-amber-300">
+                markdownChecklist: true
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -147,7 +164,16 @@ export const HandoffPage: React.FC = () => {
                     <h3 className="text-lg font-bold text-brand-navy">{group.platformName}</h3>
                     <p className="text-xs text-gray-500">
                       {group.items.length} items to add • Estimated total:{" "}
-                      <strong className="text-brand-green">₹{group.estimatedTotalRupees}</strong>
+                      <strong className="text-brand-green">
+                        {group.hasUnknownFees
+                          ? `₹${group.estimatedTotalRupees} – ₹${(group.estimatedTotalRupees || 0) + 10}`
+                          : `₹${group.estimatedTotalRupees}`}
+                      </strong>
+                      {group.hasUnknownFees && (
+                        <span className="ml-2 inline-block text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded">
+                          ⚠️ Dynamic Fee Range — Never coerced to ₹0
+                        </span>
+                      )}
                     </p>
                   </div>
                 </div>

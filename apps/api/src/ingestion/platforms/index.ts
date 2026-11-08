@@ -6,6 +6,13 @@ import { zeptoScraper } from "./zepto.js";
 import { instamartScraper } from "./instamart.js";
 
 export { blinkitScraper, bigBasketScraper, zeptoScraper, instamartScraper };
+export {
+  parseBlinkitSearchPayload,
+  parseZeptoSearchPayload,
+  parseBigBasketSearchPayload,
+  createManualAssistedObservation,
+  type ManualObservationInput,
+} from "../payloadNormalizers.js";
 
 export const PLATFORM_SCRAPERS: Record<PlatformId, PlatformScraper> = {
   blinkit: blinkitScraper,

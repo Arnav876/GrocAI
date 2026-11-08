@@ -1,6 +1,11 @@
 import React, { useState } from "react";
-import { X, PlusCircle, CheckCircle, AlertCircle } from "lucide-react";
+import { X, PlusCircle, CheckCircle, AlertCircle, ShieldAlert, Calculator } from "lucide-react";
 import { apiClient } from "../../services/apiClient.js";
+import {
+  PINCODE_REGEX,
+  parseAndNormalizeQuantityWithPrice,
+  formatPaiseToRupees,
+} from "@groqai/shared";
 
 interface ManualPriceModalProps {
   isOpen: boolean;
@@ -28,16 +33,37 @@ export const ManualPriceModal: React.FC<ManualPriceModalProps> = ({
 
   if (!isOpen) return null;
 
+  // Real-time normalized unit price computation
+  const parsedPrice = parseFloat(priceRupees);
+  let normalizedPreview: { unitRupees: string; referenceUnit: string; paise: number } | null = null;
+  if (!isNaN(parsedPrice) && parsedPrice > 0 && packSize.trim()) {
+    try {
+      const pricePaise = Math.round(parsedPrice * 100);
+      const norm = parseAndNormalizeQuantityWithPrice(packSize.trim(), pricePaise);
+      normalizedPreview = {
+        unitRupees: formatPaiseToRupees(norm.pricePerReferenceUnitPaise),
+        referenceUnit: norm.referenceUnit,
+        paise: norm.pricePerReferenceUnitPaise,
+      };
+    } catch {
+      normalizedPreview = null;
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    const parsedPrice = parseFloat(priceRupees);
+
     if (!title.trim()) {
       setError("Product title is required.");
       return;
     }
     if (isNaN(parsedPrice) || parsedPrice <= 0) {
       setError("Please enter a valid price in Rupees.");
+      return;
+    }
+    if (!PINCODE_REGEX.test(pincode.trim())) {
+      setError("Please enter a valid 6-digit Indian PIN code (cannot start with 0).");
       return;
     }
 
@@ -82,12 +108,17 @@ export const ManualPriceModal: React.FC<ManualPriceModalProps> = ({
           </div>
           <div>
             <h2 className="text-base font-bold text-brand-navy">Add Swiggy Instamart Price</h2>
-            <p className="text-[11px] text-gray-500">Assisted / Manual Consumer Price Benchmark</p>
+            <p className="text-[11px] text-gray-500">Assisted Operator Benchmark (PerimeterX Protected)</p>
           </div>
         </div>
 
+        {/* PerimeterX Anti-Bot Policy Notice */}
         <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 mb-4 text-[11px] text-amber-900 leading-relaxed">
-          <strong>Compliance Policy:</strong> Instamart data is not scraped automatically to respect perimeter policies. Adding manual benchmarks allows the optimizer to include Instamart in your multi-store splits.
+          <div className="flex items-center gap-1.5 font-bold mb-1 text-amber-950">
+            <ShieldAlert className="w-4 h-4 text-amber-700 shrink-0" />
+            <span>PerimeterX Anti-Bot Compliance Policy</span>
+          </div>
+          Swiggy Instamart employs PerimeterX bot-challenges. In compliance with strict agentic security invariants, GrocAI NEVER bypasses or scripts around anti-bot gates. Assisted Operator Mode accepts manual observations to benchmark Instamart prices honorably.
         </div>
 
         {error && (
@@ -143,13 +174,27 @@ export const ManualPriceModal: React.FC<ManualPriceModalProps> = ({
               </div>
             </div>
 
+            {/* Normalized Unit Price Live Preview */}
+            {normalizedPreview && (
+              <div className="p-2.5 bg-brand-green-light/40 border border-brand-green/30 rounded-xl flex items-center justify-between text-xs">
+                <span className="text-gray-600 flex items-center gap-1.5">
+                  <Calculator className="w-3.5 h-3.5 text-brand-green" />
+                  <span>Normalized Unit Price:</span>
+                </span>
+                <span className="font-bold text-brand-green">
+                  {normalizedPreview.unitRupees} / {normalizedPreview.referenceUnit}
+                </span>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-bold text-brand-navy mb-1">Pincode</label>
+                <label className="block text-xs font-bold text-brand-navy mb-1">Pincode (6-Digits)</label>
                 <input
                   type="text"
+                  maxLength={6}
                   value={pincode}
-                  onChange={(e) => setPincode(e.target.value)}
+                  onChange={(e) => setPincode(e.target.value.replace(/\D/g, ""))}
                   placeholder="110001"
                   required
                   className="w-full text-xs border border-brand-border rounded-xl px-3 py-2 font-medium focus:outline-none focus:border-brand-green"

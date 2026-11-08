@@ -29,6 +29,8 @@ export {
   type ObservationPlatformId,
 } from "./schemas/observation.js";
 export * from "./schemas/fees.js";
+export * from "./schemas/nlParser.js";
+export * from "./types/basketOptimization.js";
 export {
   assertIntegerPaise,
   addPaise,

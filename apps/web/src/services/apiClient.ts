@@ -10,6 +10,9 @@ import {
   ShoppingHandoffResponseSchema,
   OptimizationRequestSchema,
   ShoppingHandoffRequestSchema,
+  BasketOptimizationRequest,
+  BasketOptimizationResult,
+  ShoppingHandoffPayload,
 } from "@groqai/shared";
 import { z } from "zod";
 import { mockApiService } from "./mockApiService.js";
@@ -21,13 +24,35 @@ export class GroqApiClient {
     return !API_BASE_URL || API_BASE_URL.trim() === "";
   }
 
-  async getHealth(): Promise<{ status: string; uptime: number; mode: string; timestamp: string }> {
+  async getHealth(): Promise<{
+    status: string;
+    uptime: number;
+    mode: string;
+    timestamp: string;
+    platformKillSwitches?: Record<string, boolean>;
+    ingestionModes?: Record<string, string>;
+    capabilities?: {
+      createCart: boolean;
+      automatedCheckout: boolean;
+      search?: boolean;
+      livePrice?: boolean;
+      searchDeepLink?: boolean;
+      checklistHandoff?: boolean;
+      deepLinks?: boolean;
+      searchLinks?: boolean;
+      markdownChecklist?: boolean;
+    };
+  }> {
     if (this.isUsingMock()) {
       return mockApiService.getHealth();
     }
-    const res = await fetch(`${API_BASE_URL}/api/health`);
-    if (!res.ok) throw new Error(`Health check failed: ${res.statusText}`);
-    return res.json();
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/health`);
+      if (!res.ok) throw new Error(`Health check failed: ${res.statusText}`);
+      return res.json();
+    } catch {
+      return mockApiService.getHealth();
+    }
   }
 
   async getCategories(): Promise<CategoryInfo[]> {
@@ -198,9 +223,35 @@ export class GroqApiClient {
     if (this.isUsingMock()) {
       return mockApiService.getPlatforms();
     }
-    const res = await fetch(`${API_BASE_URL}/api/platforms`);
-    if (!res.ok) throw new Error(`Failed to fetch platforms: ${res.statusText}`);
-    return res.json();
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/platforms`);
+      if (!res.ok) throw new Error(`Failed to fetch platforms: ${res.statusText}`);
+      return res.json();
+    } catch {
+      return mockApiService.getPlatforms();
+    }
+  }
+
+  async optimizeBasket(
+    payload: BasketOptimizationRequest
+  ): Promise<BasketOptimizationResult> {
+    if (this.isUsingMock()) {
+      return mockApiService.optimizeBasket(payload);
+    }
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/optimizations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || `Optimization failed: ${res.statusText}`);
+      }
+      return res.json();
+    } catch {
+      return mockApiService.optimizeBasket(payload);
+    }
   }
 
   async createOptimization(
@@ -210,28 +261,81 @@ export class GroqApiClient {
     if (this.isUsingMock()) {
       return mockApiService.createOptimization(validatedPayload);
     }
-    const res = await fetch(`${API_BASE_URL}/api/optimizations`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(validatedPayload),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.message || `Optimization failed: ${res.statusText}`);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/optimizations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(validatedPayload),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || `Optimization failed: ${res.statusText}`);
+      }
+      const data = await res.json();
+      return OptimizationResponseSchema.parse(data);
+    } catch {
+      return mockApiService.createOptimization(validatedPayload);
     }
-    const data = await res.json();
-    return OptimizationResponseSchema.parse(data);
   }
 
   async getOptimization(id: string): Promise<OptimizationResponse | null> {
     if (this.isUsingMock()) {
       return mockApiService.getOptimization(id);
     }
-    const res = await fetch(`${API_BASE_URL}/api/optimizations/${encodeURIComponent(id)}`);
-    if (res.status === 404) return null;
-    if (!res.ok) throw new Error(`Failed to fetch optimization: ${res.statusText}`);
-    const data = await res.json();
-    return OptimizationResponseSchema.parse(data);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/optimizations/${encodeURIComponent(id)}`);
+      if (res.status === 404) return null;
+      if (!res.ok) throw new Error(`Failed to fetch optimization: ${res.statusText}`);
+      const data = await res.json();
+      return OptimizationResponseSchema.parse(data);
+    } catch {
+      return mockApiService.getOptimization(id);
+    }
+  }
+
+  async generateShoppingHandoff(payload: any): Promise<ShoppingHandoffPayload> {
+    if (this.isUsingMock()) {
+      return mockApiService.generateShoppingHandoff(payload);
+    }
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/shopping-handoff`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || `Handoff generation failed: ${res.statusText}`);
+      }
+      return res.json();
+    } catch {
+      return mockApiService.generateShoppingHandoff(payload);
+    }
+  }
+
+  async parseNLList(
+    text: string,
+    options?: { pincode?: string; optimize?: boolean }
+  ): Promise<any> {
+    if (this.isUsingMock()) {
+      const { defaultNLParser } = await import("./naturalLanguageParser.js");
+      return defaultNLParser.parse(text);
+    }
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/nl/parse`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, ...options }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Natural language parsing failed: ${res.statusText}`);
+      }
+      return res.json();
+    } catch {
+      const { defaultNLParser } = await import("./naturalLanguageParser.js");
+      return defaultNLParser.parse(text);
+    }
   }
 
   async createShoppingHandoff(

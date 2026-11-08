@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { X, MapPin, Navigation, CheckCircle2 } from "lucide-react";
 import { useBasket } from "../../context/BasketContext.js";
+import { PINCODE_REGEX } from "@groqai/shared";
 
 interface PincodeModalProps {
   isOpen: boolean;
@@ -16,24 +17,28 @@ export const PincodeModal: React.FC<PincodeModalProps> = ({ isOpen, onClose }) =
 
   if (!isOpen) return null;
 
-  const handleSavePincode = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!/^\d{6}$/.test(inputPincode)) {
-      setError("Please enter a valid 6-digit Indian PIN code");
+  const handleApplyPincode = (code: string) => {
+    if (!PINCODE_REGEX.test(code)) {
+      setError("Please enter a valid 6-digit Indian PIN code (e.g. 110001, 560001; cannot start with 0)");
       return;
     }
     setError(null);
-    setPincode(inputPincode);
-    if (inputPincode === "110001") {
+    setPincode(code);
+    if (code === "110001") {
       setLocationName("Connaught Place, Central Delhi");
-    } else if (inputPincode === "560001") {
+    } else if (code === "560001") {
       setLocationName("MG Road, Bengaluru");
-    } else if (inputPincode === "400001") {
+    } else if (code === "400001") {
       setLocationName("Fort, South Mumbai");
     } else {
-      setLocationName(`Delivery Area (${inputPincode})`);
+      setLocationName(`Delivery Hub (${code})`);
     }
     onClose();
+  };
+
+  const handleSavePincode = (e: React.FormEvent) => {
+    e.preventDefault();
+    handleApplyPincode(inputPincode);
   };
 
   const handleRequestPreciseLocation = () => {
@@ -81,7 +86,7 @@ export const PincodeModal: React.FC<PincodeModalProps> = ({ isOpen, onClose }) =
           <div>
             <h3 className="text-lg font-bold text-brand-navy">Set Delivery Location</h3>
             <p className="text-xs text-brand-grey">
-              Quick-commerce inventory and fees vary significantly by pincode.
+              Quick-commerce inventory, dark-store availability, and fee structures are hyper-local to your pincode.
             </p>
           </div>
         </div>
@@ -118,6 +123,36 @@ export const PincodeModal: React.FC<PincodeModalProps> = ({ isOpen, onClose }) =
             </div>
           </div>
         </form>
+
+        {/* Quick select presets */}
+        <div className="mt-3">
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1.5">
+            Quick Hub Select:
+          </span>
+          <div className="flex flex-wrap gap-2">
+            {[
+              { code: "110001", label: "Central Delhi (110001)" },
+              { code: "560001", label: "Bengaluru (560001)" },
+              { code: "400001", label: "South Mumbai (400001)" },
+            ].map((hub) => (
+              <button
+                key={hub.code}
+                type="button"
+                onClick={() => {
+                  setInputPincode(hub.code);
+                  handleApplyPincode(hub.code);
+                }}
+                className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition-all ${
+                  pincode === hub.code
+                    ? "bg-brand-green-light border-brand-green text-brand-green font-bold"
+                    : "border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100"
+                }`}
+              >
+                {hub.label}
+              </button>
+            ))}
+          </div>
+        </div>
 
         <div className="relative my-5 flex items-center justify-center">
           <div className="border-t border-gray-200 w-full"></div>

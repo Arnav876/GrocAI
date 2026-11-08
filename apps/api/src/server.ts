@@ -13,6 +13,9 @@ import {
   paiseToRupees,
   determinePriceVerificationStatus,
   calculateNormalizedUnitPrice,
+  NullCartAdapter,
+  PINCODE_REGEX,
+  parseAndNormalizeQuantityWithPrice,
 } from "@groqai/shared";
 import { ConnectorRegistry } from "./connectors/registry.js";
 import {
@@ -32,6 +35,8 @@ import {
 } from "./services/shoppingHandoffService.js";
 import { PostgresScrapeQueue } from "./ingestion/queue.js";
 import { toObservation } from "./ingestion/normalize.js";
+import { createManualAssistedObservation } from "./ingestion/payloadNormalizers.js";
+import { openapiSpecification } from "./docs/openapiSpec.js";
 
 export interface ServerOptions {
   /**
@@ -176,12 +181,27 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
 
   // GET /api/health
   app.get("/api/health", (req: Request, res: Response) => {
+    const uptimeSeconds = process.uptime();
     res.json({
       status: "ok",
-      uptime: process.uptime(),
+      uptime: uptimeSeconds,
+      uptimeSeconds,
       mode: process.env.NODE_ENV || "development",
       timestamp: new Date().toISOString(),
       adminAuthEnabled: Boolean(adminApiKey),
+      platformKillSwitches: {
+        blinkit: registry.isKillSwitchActive("blinkit"),
+        zepto: registry.isKillSwitchActive("zepto"),
+        bigbasket: registry.isKillSwitchActive("bigbasket"),
+        instamart: registry.isKillSwitchActive("instamart"),
+      },
+      ingestionModes: {
+        blinkit: "headed_worker",
+        zepto: "headed_worker",
+        bigbasket: "headed_worker",
+        instamart: "manual_assisted",
+      },
+      capabilities: NullCartAdapter.getCapabilities(),
       platforms: SUPPORTED_PLATFORMS.map((pid) => ({
         id: pid,
         name: PLATFORM_METADATA[pid].name,
@@ -208,6 +228,13 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
       const query = (req.query.q as string) || "";
       const category = (req.query.category as string) || "";
       const pincode = (req.query.pincode as string) || "110001";
+
+      if (req.query.pincode && !PINCODE_REGEX.test(req.query.pincode as string)) {
+        return res.status(400).json({
+          error: `Invalid pincode: ${req.query.pincode}. Must be a valid 6-digit Indian postal code.`,
+        });
+      }
+
       const locationKey = `delhi_${pincode}`;
 
       const whereClause: any = {};
@@ -257,6 +284,18 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
             ? calculateNormalizedUnitPrice(pricePaise, prod.packSize) || undefined
             : undefined;
 
+          let normalizedUnitPricePaise = normalizedUnitPrice?.pricePerUnitPaise;
+          let referenceUnit = normalizedUnitPrice?.unit;
+          if (pricePaise && prod.packSize) {
+            try {
+              const norm = parseAndNormalizeQuantityWithPrice(prod.packSize, pricePaise);
+              normalizedUnitPricePaise = norm.pricePerReferenceUnitPaise;
+              referenceUnit = norm.referenceUnit;
+            } catch {
+              // fallback
+            }
+          }
+
           let originalPricePaise = prod.mrpPaise || undefined;
           let discountPercentage = prod.discountPercentage || 0;
           if (originalPricePaise && pricePaise && originalPricePaise > pricePaise) {
@@ -276,6 +315,8 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
             confidence: l.confidence,
             verificationStatus,
             normalizedUnitPrice,
+            normalizedUnitPricePaise,
+            referenceUnit,
             productUrl: l.productUrl || undefined,
             searchUrl: l.searchUrl || `${PLATFORM_METADATA[pid].searchBaseUrl}${encodeURIComponent(prod.name)}`,
             serviceableArea: "Central Delhi",
@@ -300,6 +341,8 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
           variant: prod.variant,
           packSize: prod.packSize,
           normalizedUnitPrice: lowestNormalizedUnitPrice,
+          normalizedUnitPricePaise: lowestNormalizedUnitPrice?.pricePerUnitPaise,
+          referenceUnit: lowestNormalizedUnitPrice?.unit,
           rating: prod.rating || 4.7,
           reviewCount: prod.reviewCount || 100,
           lowestPricePaise: effectiveLowest,
@@ -544,10 +587,28 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
   // POST /api/products/sync
   app.post("/api/products/sync", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { productIds = [], query, pincode = "110001", forceRefresh = false } = req.body;
+      const { productIds = [], query, items = [], pincode = "110001", forceRefresh = false } = req.body || {};
       const locationKey = `delhi_${pincode}`;
 
-      let idsToSync: string[] = productIds;
+      let idsToSync: string[] = Array.isArray(productIds) ? [...productIds] : [];
+      if (idsToSync.length === 0 && Array.isArray(items) && items.length > 0) {
+        for (const item of items) {
+          const itemText = typeof item === "string" ? item : item.query || item.queryName || item.name;
+          if (itemText) {
+            const matched = await prisma.product.findFirst({
+              where: {
+                OR: [
+                  { name: { contains: itemText, mode: "insensitive" } },
+                  { brand: { contains: itemText, mode: "insensitive" } },
+                ],
+              },
+            });
+            if (matched && !idsToSync.includes(matched.id)) {
+              idsToSync.push(matched.id);
+            }
+          }
+        }
+      }
       if (idsToSync.length === 0 && query) {
         const prods = await prisma.product.findMany({
           where: {
@@ -559,6 +620,10 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
           take: 10,
         });
         idsToSync = prods.map((p) => p.id);
+      }
+      if (idsToSync.length === 0) {
+        const topProds = await prisma.product.findMany({ take: 5 });
+        idsToSync = topProds.map((p) => p.id);
       }
 
       const outcomes: any[] = [];
@@ -615,19 +680,35 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
         : req.body.query
         ? [req.body.query]
         : [];
-      const platforms: PlatformId[] =
+      const requestedPlatforms: PlatformId[] =
         Array.isArray(req.body.platforms) && req.body.platforms.length > 0
           ? req.body.platforms
           : ["blinkit", "zepto", "bigbasket"];
-      const locationKey = (req.body.locationKey as string) || "delhi_110001";
+      const locationKey =
+        (req.body.locationKey as string) ||
+        (req.body.pincode ? `delhi_${req.body.pincode}` : "delhi_110001");
       const priority = Number(req.body.priority || 5);
 
       if (queries.length === 0) {
         return res.status(400).json({ error: "queries must be a non-empty array of strings" });
       }
 
+      const manualAssistedPlatforms: string[] = [];
+      const killedPlatforms: string[] = [];
+      const automatedPlatforms: PlatformId[] = [];
+
+      for (const p of requestedPlatforms) {
+        if (p === "instamart") {
+          manualAssistedPlatforms.push("instamart");
+        } else if (registry.isKillSwitchActive(p)) {
+          killedPlatforms.push(p);
+        } else {
+          automatedPlatforms.push(p);
+        }
+      }
+
       const jobIds: string[] = [];
-      for (const p of platforms) {
+      for (const p of automatedPlatforms) {
         const jobId = await scrapeQueue.enqueue({
           platform: p,
           queries,
@@ -639,11 +720,16 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
 
       return res.status(202).json({
         status: "queued",
-        jobId: jobIds[0],
+        jobId: jobIds[0] || "manual-assisted-only",
         jobIds,
-        platforms,
+        platforms: automatedPlatforms,
         queries,
-        message: `Enqueued ${jobIds.length} ingestion jobs for processing`,
+        manualAssistedPlatforms: manualAssistedPlatforms.length > 0 ? manualAssistedPlatforms : undefined,
+        killedPlatforms: killedPlatforms.length > 0 ? killedPlatforms : undefined,
+        message:
+          manualAssistedPlatforms.includes("instamart")
+            ? `Enqueued ${jobIds.length} ingestion jobs. Instamart is in manual_assisted mode (automated scraping disabled; use /api/observations/manual).`
+            : `Enqueued ${jobIds.length} ingestion jobs for processing`,
       });
     } catch (err) {
       next(err);
@@ -730,34 +816,8 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
   // POST /api/observations/manual
   app.post("/api/observations/manual", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const {
-        platform = "instamart",
-        title,
-        pricePaise,
-        priceRupees,
-        mrpPaise,
-        packSize,
-        pincode = "110001",
-        productUrl,
-        observedAt = new Date().toISOString(),
-      } = req.body;
-
-      if (!title) {
-        return res.status(400).json({ error: "title is required" });
-      }
-
-      const calculatedPricePaise =
-        pricePaise !== undefined
-          ? Math.round(Number(pricePaise))
-          : priceRupees !== undefined
-          ? Math.round(Number(priceRupees) * 100)
-          : undefined;
-
-      if (calculatedPricePaise === undefined || calculatedPricePaise <= 0) {
-        return res.status(400).json({ error: "Valid pricePaise or priceRupees is required" });
-      }
-
-      const locationKey = `delhi_${pincode}`;
+      const rawTitle = req.body?.title || req.body?.name;
+      const explicitPackSize = req.body?.packSize || req.body?.quantity;
 
       const allProducts = await prisma.product.findMany();
       let bestProd: any = null;
@@ -765,7 +825,7 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
 
       for (const cand of allProducts) {
         const m = defaultMatcher.match(
-          { query: title, packSize },
+          { query: rawTitle, packSize: explicitPackSize },
           { id: cand.id, name: cand.name, brand: cand.brand, variant: cand.variant, packSize: cand.packSize }
         );
         if (m.isMatch && m.confidence > highestConf) {
@@ -774,51 +834,37 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
         }
       }
 
-      const obs = toObservation(
-        {
-          platform: platform as PlatformId,
-          title,
-          brand: bestProd?.brand,
-          variant: bestProd?.variant,
-          packSize: packSize || bestProd?.packSize,
-          pricePaise: calculatedPricePaise,
-          originalPricePaise: mrpPaise ? Math.round(Number(mrpPaise)) : calculatedPricePaise,
-          productUrl,
-          pincode,
-          serviceableArea: "Manual User Entry",
-        },
-        { pincode, locationKey },
-        {
-          productId: bestProd?.id,
-          sourceType: "manual",
-          verificationStatus: "cached",
-          confidence: highestConf > 0 ? highestConf : 0.9,
-        }
-      );
+      const normalized = createManualAssistedObservation({
+        ...req.body,
+        title: rawTitle,
+        brand: req.body?.brand || bestProd?.brand,
+        quantity: explicitPackSize || bestProd?.packSize || "1 unit",
+      });
+
+      const locationKey = `delhi_${normalized.pincode}`;
 
       // Persist PriceObservation
       const savedObs = await prisma.priceObservation.create({
         data: {
-          productId: obs.productId,
-          platform: obs.platform,
-          locationKey: obs.locationKey,
-          rawTitle: obs.title,
-          brand: obs.brand,
-          variant: obs.variant,
-          packSize: obs.packSize,
-          pricePaise: obs.pricePaise,
-          originalPricePaise: obs.originalPricePaise,
+          productId: bestProd?.id,
+          platform: normalized.platformId,
+          locationKey,
+          rawTitle: normalized.name,
+          brand: normalized.brand,
+          variant: bestProd?.variant,
+          packSize: normalized.quantity,
+          pricePaise: normalized.pricePaise,
+          originalPricePaise: normalized.originalPricePaise,
           currency: "INR",
-          availability: "available",
-          productUrl: obs.productUrl,
-          pincode: obs.pincode,
-          serviceableArea: obs.serviceableArea,
-          normalizedUnitPricePaise: obs.normalizedUnitPricePaise,
-          normalizedUnit: obs.normalizedUnit,
+          availability: normalized.availabilityStatus === "IN_STOCK" ? "available" : "unavailable",
+          productUrl: normalized.productUrl,
+          pincode: normalized.pincode,
+          serviceableArea: "Manual User Entry",
+          normalizedUnitPricePaise: normalized.normalizedUnitPricePaise,
           sourceType: "manual",
           verificationStatus: "cached",
-          confidence: obs.confidence,
-          observedAt: new Date(obs.observedAt),
+          confidence: highestConf > 0 ? highestConf : 0.9,
+          observedAt: new Date(normalized.observedAt),
           fetchedAt: new Date(),
           notes: ["User-submitted manual observation via /api/observations/manual"],
         },
@@ -830,43 +876,52 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
           where: {
             productId_platform_locationKey: {
               productId: bestProd.id,
-              platform: platform as PlatformId,
+              platform: normalized.platformId,
               locationKey,
             },
           },
           create: {
             productId: bestProd.id,
-            platform,
+            platform: normalized.platformId,
             locationKey,
-            currentPricePaise: calculatedPricePaise,
-            availability: "available",
+            currentPricePaise: normalized.pricePaise,
+            availability: normalized.availabilityStatus === "IN_STOCK" ? "available" : "unavailable",
             isStale: false,
-            confidence: obs.confidence,
+            confidence: highestConf > 0 ? highestConf : 0.9,
             sourceType: "manual",
-            lastObservedAt: new Date(obs.observedAt),
-            productUrl,
+            lastObservedAt: new Date(normalized.observedAt),
+            productUrl: normalized.productUrl,
           },
           update: {
-            currentPricePaise: calculatedPricePaise,
-            availability: "available",
+            currentPricePaise: normalized.pricePaise,
+            availability: normalized.availabilityStatus === "IN_STOCK" ? "available" : "unavailable",
             isStale: false,
-            confidence: obs.confidence,
+            confidence: highestConf > 0 ? highestConf : 0.9,
             sourceType: "manual",
-            lastObservedAt: new Date(obs.observedAt),
-            productUrl: productUrl || undefined,
+            lastObservedAt: new Date(normalized.observedAt),
+            productUrl: normalized.productUrl,
           },
         });
       }
 
       return res.status(201).json({
-        message: "Manual observation recorded successfully",
-        observation: savedObs,
+        message: "Manual price observation recorded successfully",
+        observation: {
+          ...savedObs,
+          name: normalized.name,
+          title: normalized.name,
+          discountPercentage: normalized.discountPercentage,
+          availabilityStatus: normalized.availabilityStatus,
+          platformId: normalized.platformId,
+          dataSource: normalized.dataSource,
+          normalizedUnitPricePaise: normalized.normalizedUnitPricePaise,
+        },
         matchedProduct: bestProd
           ? { id: bestProd.id, name: bestProd.name, confidence: highestConf }
           : null,
       });
-    } catch (err) {
-      next(err);
+    } catch (err: any) {
+      return res.status(400).json({ error: err.message || "Invalid manual observation payload" });
     }
   });
 
@@ -940,6 +995,11 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
   // POST /api/optimizations
   app.post("/api/optimizations", async (req: Request, res: Response, next: NextFunction) => {
     try {
+      if ((req.body.pincode && !req.body.locationId) || req.body.items?.[0]?.queryName) {
+        const result = await optimizationService.optimizeBasket(req.body);
+        return res.status(201).json(result);
+      }
+
       const parsed = OptimizationRequestSchema.parse(req.body);
 
       // 1. Build fee rules for the location without inventing unknown fees.
@@ -1263,6 +1323,11 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
   // POST /api/shopping-handoff
   app.post("/api/shopping-handoff", async (req: Request, res: Response, next: NextFunction) => {
     try {
+      if (req.body.storeCarts) {
+        const payload = ShoppingHandoffService.generateHandoffPayload(req.body);
+        return res.status(200).json(payload);
+      }
+
       const parsed = ShoppingHandoffRequestSchema.parse(req.body);
       const record = await prisma.optimizationResult.findUnique({
         where: { id: parsed.optimizationId },
@@ -1420,35 +1485,43 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
     }
   });
 
-  // OpenAPI Specification endpoint
+  // POST /api/nl/parse (Phase 4 Hybrid NL Parser & Optimization Chaining)
+  app.post("/api/nl/parse", async (req: Request, res: Response) => {
+    try {
+      const { text, pincode, optimize } = req.body || {};
+      if (!text || typeof text !== "string" || !text.trim()) {
+        return res.status(400).json({ error: "Input text cannot be empty" });
+      }
+
+      const parseResult = await nlParser.parseGroceryList(text);
+
+      let optimizationResult = null;
+      if (optimize && pincode) {
+        const basketItems = parseResult.items.map((it) => ({
+          queryName: it.queryName,
+          quantity: it.quantity,
+          allowSubstitutions: it.allowSubstitutions,
+          preferredBrand: it.brandPreference || undefined,
+        }));
+        optimizationResult = await optimizationService.optimizeBasket({
+          items: basketItems,
+          pincode,
+        });
+      }
+
+      return res.status(200).json({
+        ...parseResult,
+        parsed: parseResult,
+        optimization: optimizationResult,
+      });
+    } catch (err: any) {
+      return res.status(400).json({ error: err.message || "Failed to parse natural language list" });
+    }
+  });
+
+  // OpenAPI Specification endpoint (Deliverable 2)
   app.get("/api/docs/openapi.json", (req: Request, res: Response) => {
-    res.json({
-      openapi: "3.0.0",
-      info: {
-        title: "GroqAI Grocery Price Comparison & Basket Optimizer API",
-        version: "1.0.0",
-        description:
-          "Deterministic grocery price comparison and basket optimizer for Indian quick-commerce (Blinkit, Zepto, Swiggy Instamart, BigBasket).",
-      },
-      servers: [{ url: `http://localhost:${process.env.API_PORT || 5001}` }],
-      paths: {
-        "/api/health": { get: { summary: "Health check and uptime" } },
-        "/api/categories": { get: { summary: "List grocery categories" } },
-        "/api/products/search": { get: { summary: "Search grocery products with multi-store prices" } },
-        "/api/products/{id}": { get: { summary: "Get product details with platform listings" } },
-        "/api/data-provenance": {
-          get: { summary: "Aggregate live/manual/mock listing provenance for a pincode" },
-        },
-        "/api/fees": { get: { summary: "Read location-scoped fee structures with provenance" } },
-        "/api/fees/{platform}": {
-          put: { summary: "Save manually verified fee structure (admin auth when configured)" },
-        },
-        "/api/optimizations": { post: { summary: "Calculate 3-strategy basket optimization" } },
-        "/api/optimizations/{id}": { get: { summary: "Retrieve optimization result" } },
-        "/api/platforms": { get: { summary: "List platform connector capabilities and health" } },
-        "/api/shopping-handoff": { post: { summary: "Generate merchant purchase checklist & links" } },
-      },
-    });
+    res.json(openapiSpecification);
   });
 
   // Global Error Handler

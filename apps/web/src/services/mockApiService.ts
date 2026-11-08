@@ -17,6 +17,17 @@ import {
   summarizeProvenance,
   FeeSummary,
   OptimizationLineItem,
+  NullCartAdapter,
+  BasketOptimizationRequest,
+  BasketOptimizationResult,
+  ShoppingHandoffPayload,
+  StrategyEvaluation,
+  StoreCartEvaluation,
+  SubsetEvaluationSummary,
+  formatPaiseToRupees,
+  assertIntegerPaise,
+  AssignedLineItem,
+  FeeBreakdownPaise,
 } from "@groqai/shared";
 import { z } from "zod";
 import { MOCK_CATEGORIES } from "../fixtures/mockCategories.js";
@@ -28,12 +39,43 @@ type OptimizationRequestInput = z.input<typeof OptimizationRequestSchema>;
 const storedOptimizations = new Map<string, OptimizationResponse>();
 
 export class MockApiService {
-  async getHealth(): Promise<{ status: string; uptime: number; mode: string; timestamp: string }> {
+  async getHealth(): Promise<{
+    status: string;
+    uptime: number;
+    mode: string;
+    timestamp: string;
+    platformKillSwitches?: Record<string, boolean>;
+    ingestionModes?: Record<string, string>;
+    capabilities?: {
+      createCart: boolean;
+      automatedCheckout: boolean;
+      search?: boolean;
+      livePrice?: boolean;
+      searchDeepLink?: boolean;
+      checklistHandoff?: boolean;
+      deepLinks?: boolean;
+      searchLinks?: boolean;
+      markdownChecklist?: boolean;
+    };
+  }> {
     return {
       status: "ok",
       uptime: 120,
       mode: "mock",
       timestamp: new Date().toISOString(),
+      platformKillSwitches: {
+        blinkit: false,
+        zepto: false,
+        instamart: false,
+        bigbasket: false,
+      },
+      ingestionModes: {
+        blinkit: "headed_worker",
+        zepto: "headed_worker",
+        bigbasket: "headed_worker",
+        instamart: "manual_assisted",
+      },
+      capabilities: NullCartAdapter.getCapabilities(),
     };
   }
 
@@ -61,10 +103,11 @@ export class MockApiService {
   async getPlatforms(): Promise<PlatformHealthStatus[]> {
     return SUPPORTED_PLATFORMS.map((pid) => {
       const meta = PLATFORM_METADATA[pid];
+      const ingestionMode = pid === "instamart" ? "manual_assisted" : "headed_worker";
       return {
         id: pid,
         name: meta.name,
-        mode: "mock",
+        mode: ingestionMode,
         enabled: true,
         capabilities: { ...meta.defaultCapabilities },
         status: "healthy",
@@ -74,6 +117,7 @@ export class MockApiService {
         notes: [
           `Running in mock mode for Central Delhi (110001)`,
           `Automated cart transfer is explicitly unsupported (NullCartAdapter)`,
+          `Ingestion mode: ${ingestionMode}`,
         ],
       };
     });
@@ -600,6 +644,470 @@ export class MockApiService {
       notice:
         "Verify basket, address, fees and total in the app. Payment happens on the platform, not on GroqAI.",
       platforms: platformsList,
+    };
+  }
+
+  async optimizeBasket(request: BasketOptimizationRequest): Promise<BasketOptimizationResult> {
+    const pincode = request.pincode || "110001";
+    const requestedItems = request.items.map((item) => {
+      const q = (item.queryName || (item as any).query || "").toLowerCase().trim();
+      const matchedProd =
+        MOCK_PRODUCTS.find((p) => p.name.toLowerCase().includes(q) || p.brand.toLowerCase().includes(q)) ||
+        MOCK_PRODUCTS[0];
+      return {
+        queryName: item.queryName || (item as any).query || matchedProd.name,
+        canonicalProductId: item.canonicalProductId || matchedProd.id,
+        quantity: Math.max(1, item.quantity || 1),
+        product: matchedProd,
+      };
+    });
+
+    const evaluateCartForPlatform = (
+      platformId: PlatformId,
+      items: { queryName: string; canonicalProductId?: string; quantity: number; product: ProductSummary }[]
+    ): StoreCartEvaluation => {
+      const feeRule = MOCK_PLATFORM_FEE_RULES[platformId] || MOCK_PLATFORM_FEE_RULES.blinkit;
+      const assignedItems: AssignedLineItem[] = [];
+      let subtotalPaise = 0;
+
+      for (const req of items) {
+        const platData = req.product.platformPrices[platformId];
+        const unitPricePaise = platData?.pricePaise || 5500;
+        assertIntegerPaise(unitPricePaise);
+        const lineTotalPaise = unitPricePaise * req.quantity;
+        assertIntegerPaise(lineTotalPaise);
+        subtotalPaise += lineTotalPaise;
+
+        assignedItems.push({
+          queryName: req.queryName,
+          canonicalProductId: req.canonicalProductId,
+          matchedTitle: req.product.name,
+          brand: req.product.brand,
+          quantity: req.quantity,
+          unitPricePaise,
+          lineTotalPaise,
+          availability: "IN_STOCK",
+          platformId,
+          searchUrl: platData?.searchUrl || `${PLATFORM_METADATA[platformId].searchBaseUrl}${encodeURIComponent(req.product.name)}`,
+        });
+      }
+
+      const freeDeliveryThresholdPaise = feeRule.freeDeliveryThresholdPaise || 19900;
+      const isFreeDelivery = subtotalPaise >= freeDeliveryThresholdPaise;
+      const deliveryFeePaise = isFreeDelivery
+        ? 0
+        : typeof feeRule.deliveryFeePaise === "number"
+        ? feeRule.deliveryFeePaise
+        : 2500;
+
+      const hasUnknownFees = platformId === "bigbasket";
+      const handlingMinPaise = hasUnknownFees ? 500 : typeof feeRule.handlingFeePaise === "number" ? feeRule.handlingFeePaise : 400;
+      const handlingMaxPaise = hasUnknownFees ? 1500 : handlingMinPaise;
+      const platformFeePaise = typeof feeRule.platformFeePaise === "number" ? feeRule.platformFeePaise : 300;
+
+      const feeBreakdown: FeeBreakdownPaise = {
+        deliveryFee: {
+          minPaise: deliveryFeePaise,
+          maxPaise: deliveryFeePaise,
+          isKnown: true,
+          label: isFreeDelivery ? "FREE Delivery" : "Standard Delivery",
+        },
+        handlingFee: {
+          minPaise: handlingMinPaise,
+          maxPaise: handlingMaxPaise,
+          isKnown: !hasUnknownFees,
+          label: hasUnknownFees ? "Dynamic Handling Fee" : "Handling Fee",
+        },
+        platformFee: {
+          minPaise: platformFeePaise,
+          maxPaise: platformFeePaise,
+          isKnown: true,
+          label: "Platform Convenience Fee",
+        },
+        smallCartFee: {
+          minPaise: 0,
+          maxPaise: 0,
+          isKnown: true,
+          label: "Small Cart Fee",
+        },
+        totalFeeMinPaise: deliveryFeePaise + handlingMinPaise + platformFeePaise,
+        totalFeeMaxPaise: deliveryFeePaise + handlingMaxPaise + platformFeePaise,
+        hasUnknownFees,
+      };
+
+      const totalMinPaise = subtotalPaise + feeBreakdown.totalFeeMinPaise;
+      const totalMaxPaise = subtotalPaise + feeBreakdown.totalFeeMaxPaise;
+
+      const amountToFreeDelivery = Math.max(0, freeDeliveryThresholdPaise - subtotalPaise);
+      const feeCliffWarnings: string[] = [];
+      if (amountToFreeDelivery > 0 && amountToFreeDelivery <= 10000) {
+        feeCliffWarnings.push(
+          `Add ₹${(amountToFreeDelivery / 100).toFixed(2)} more on ${PLATFORM_METADATA[platformId].name} for FREE delivery (saves ₹${(deliveryFeePaise / 100).toFixed(2)})`
+        );
+      }
+
+      return {
+        platformId,
+        platformName: PLATFORM_METADATA[platformId].name,
+        items: assignedItems,
+        subtotalPaise,
+        feeBreakdown,
+        totalMinPaise,
+        totalMaxPaise,
+        hasUnknownFees,
+        cliffs: {
+          amountToFreeDeliveryPaise: amountToFreeDelivery,
+          potentialDeliveryFeeSavingsPaise: isFreeDelivery ? 0 : deliveryFeePaise,
+          amountToAvoidSmallCartFeePaise: 0,
+          potentialSmallCartFeeSavingsPaise: 0,
+        },
+        feeCliffWarnings,
+      };
+    };
+
+    const buildStrategyFromStoreCarts = (
+      strategy: "CHEAPEST_ITEM_BY_ITEM" | "CHEAPEST_SINGLE_PLATFORM" | "OPTIMIZED_MULTI_PLATFORM_SPLIT",
+      strategyName: string,
+      carts: StoreCartEvaluation[],
+      rationale?: string
+    ): StrategyEvaluation => {
+      const platforms = carts.map((c) => c.platformId);
+      const storeCartsRecord = carts.reduce((acc, c) => {
+        acc[c.platformId] = c;
+        return acc;
+      }, {} as Record<PlatformId, StoreCartEvaluation>);
+
+      const itemSubtotalPaise = carts.reduce((sum, c) => sum + c.subtotalPaise, 0);
+      const totalFeeMinPaise = carts.reduce((sum, c) => sum + c.feeBreakdown.totalFeeMinPaise, 0);
+      const totalFeeMaxPaise = carts.reduce((sum, c) => sum + c.feeBreakdown.totalFeeMaxPaise, 0);
+      const estimatedTotalMinPaise = itemSubtotalPaise + totalFeeMinPaise;
+      const estimatedTotalMaxPaise = itemSubtotalPaise + totalFeeMaxPaise;
+      const hasUnknownFees = carts.some((c) => c.hasUnknownFees);
+      const feeCliffWarnings = carts.flatMap((c) => c.feeCliffWarnings);
+
+      return {
+        strategy,
+        strategyName,
+        platforms,
+        storeCarts: storeCartsRecord,
+        shelfSubtotalPaise: itemSubtotalPaise,
+        itemSubtotalPaise,
+        totalFeeMinPaise,
+        totalFeeMaxPaise,
+        estimatedTotalMinPaise,
+        estimatedTotalMaxPaise,
+        hasUnknownFees,
+        coverageCount: requestedItems.length,
+        totalRequestedItems: requestedItems.length,
+        missingItems: [],
+        feeCliffWarnings,
+        savingsVsSinglePlatformPaise: 0,
+        rationale,
+      };
+    };
+
+    // 1. Single platform evaluations
+    const singleEvaluations: StrategyEvaluation[] = SUPPORTED_PLATFORMS.map((pid) => {
+      const cart = evaluateCartForPlatform(pid, requestedItems);
+      return buildStrategyFromStoreCarts(
+        "CHEAPEST_SINGLE_PLATFORM",
+        `Cheapest Single Store (${PLATFORM_METADATA[pid].name})`,
+        [cart],
+        `All items bundled into a single delivery from ${PLATFORM_METADATA[pid].name}.`
+      );
+    });
+    singleEvaluations.sort((a, b) => a.estimatedTotalMinPaise - b.estimatedTotalMinPaise);
+    const bestSingle = singleEvaluations[0];
+    const cheapestSinglePlatform = bestSingle;
+
+    // 2. Greedy Item-by-Item assignment
+    const itemsByBestPlatform: Record<PlatformId, typeof requestedItems> = {
+      blinkit: [],
+      zepto: [],
+      instamart: [],
+      bigbasket: [],
+    };
+
+    for (const req of requestedItems) {
+      let lowestPid: PlatformId = "blinkit";
+      let lowestPaise = Infinity;
+      for (const pid of SUPPORTED_PLATFORMS) {
+        const price = req.product.platformPrices[pid]?.pricePaise || 5500;
+        if (price < lowestPaise) {
+          lowestPaise = price;
+          lowestPid = pid;
+        }
+      }
+      itemsByBestPlatform[lowestPid].push(req);
+    }
+
+    const itemByItemCarts = SUPPORTED_PLATFORMS.filter(
+      (pid) => itemsByBestPlatform[pid].length > 0
+    ).map((pid) => evaluateCartForPlatform(pid, itemsByBestPlatform[pid]));
+
+    const cheapestItemByItem = buildStrategyFromStoreCarts(
+      "CHEAPEST_ITEM_BY_ITEM",
+      "Cheapest Item-by-Item (Raw Shelf Floor)",
+      itemByItemCarts,
+      "Assigns every item to its absolute lowest shelf price regardless of delivery fees."
+    );
+
+    // 3. 15-Subset Enumeration ($2^4 - 1 = 15$)
+    const enumerateSubsets = <T>(arr: T[]): T[][] => {
+      const subsets: T[][] = [];
+      const total = 1 << arr.length;
+      for (let i = 1; i < total; i++) {
+        const subset: T[] = [];
+        for (let j = 0; j < arr.length; j++) {
+          if ((i & (1 << j)) !== 0) {
+            subset.push(arr[j]);
+          }
+        }
+        subsets.push(subset);
+      }
+      return subsets;
+    };
+
+    const allSubsets = enumerateSubsets(SUPPORTED_PLATFORMS);
+    const evaluatedSubsets: SubsetEvaluationSummary[] = allSubsets.map((subset, index) => {
+      const subsetItemsByPlat: Record<PlatformId, typeof requestedItems> = {
+        blinkit: [],
+        zepto: [],
+        instamart: [],
+        bigbasket: [],
+      };
+      for (const req of requestedItems) {
+        let bestPid = subset[0];
+        let minPrice = Infinity;
+        for (const pid of subset) {
+          const price = req.product.platformPrices[pid]?.pricePaise || 5500;
+          if (price < minPrice) {
+            minPrice = price;
+            bestPid = pid;
+          }
+        }
+        subsetItemsByPlat[bestPid].push(req);
+      }
+
+      const activeCarts = subset
+        .filter((pid) => subsetItemsByPlat[pid].length > 0)
+        .map((pid) => evaluateCartForPlatform(pid, subsetItemsByPlat[pid]));
+
+      const subtotalPaise = activeCarts.reduce((sum, c) => sum + c.subtotalPaise, 0);
+      const feeMinPaise = activeCarts.reduce((sum, c) => sum + c.feeBreakdown.totalFeeMinPaise, 0);
+      const feeMaxPaise = activeCarts.reduce((sum, c) => sum + c.feeBreakdown.totalFeeMaxPaise, 0);
+      const estimatedTotalMinPaise = subtotalPaise + feeMinPaise;
+      const estimatedTotalMaxPaise = subtotalPaise + feeMaxPaise;
+      const hasUnknownFees = activeCarts.some((c) => c.hasUnknownFees);
+
+      return {
+        rank: index + 1,
+        subset,
+        subsetName: subset.map((pid) => PLATFORM_METADATA[pid].name).join(" + "),
+        activeStoreCount: activeCarts.length,
+        coverageCount: requestedItems.length,
+        totalRequestedItems: requestedItems.length,
+        subtotalPaise,
+        feeMinPaise,
+        feeMaxPaise,
+        estimatedTotalMinPaise,
+        estimatedTotalMaxPaise,
+        hasUnknownFees,
+        isFeasible: true,
+      };
+    });
+
+    evaluatedSubsets.sort((a, b) => a.estimatedTotalMinPaise - b.estimatedTotalMinPaise);
+    evaluatedSubsets.forEach((s, idx) => {
+      s.rank = idx + 1;
+    });
+
+    // 4. Optimized Multi-Platform Strategy
+    let optimizedMultiPlatform: StrategyEvaluation;
+    const bestSubsetSummary = evaluatedSubsets[0];
+    const savingsVsSingle = bestSingle.estimatedTotalMinPaise - bestSubsetSummary.estimatedTotalMinPaise;
+    if (savingsVsSingle >= 2000 && bestSubsetSummary.activeStoreCount <= 2) {
+      const subsetPlatforms = bestSubsetSummary.subset;
+      const subsetItems: Record<PlatformId, typeof requestedItems> = {
+        blinkit: [],
+        zepto: [],
+        instamart: [],
+        bigbasket: [],
+      };
+      for (const req of requestedItems) {
+        let bestPid = subsetPlatforms[0];
+        let minPrice = Infinity;
+        for (const pid of subsetPlatforms) {
+          const price = req.product.platformPrices[pid]?.pricePaise || 5500;
+          if (price < minPrice) {
+            minPrice = price;
+            bestPid = pid;
+          }
+        }
+        subsetItems[bestPid].push(req);
+      }
+      const activeCarts = subsetPlatforms
+        .filter((pid) => subsetItems[pid].length > 0)
+        .map((pid) => evaluateCartForPlatform(pid, subsetItems[pid]));
+
+      optimizedMultiPlatform = buildStrategyFromStoreCarts(
+        "OPTIMIZED_MULTI_PLATFORM_SPLIT",
+        `Smart Split (${bestSubsetSummary.subsetName})`,
+        activeCarts,
+        `Optimal split across ${activeCarts.length} stores saves net ₹${(
+          savingsVsSingle / 100
+        ).toFixed(2)} after extra delivery and handling charges.`
+      );
+    } else {
+      optimizedMultiPlatform = {
+        ...cheapestSinglePlatform,
+        strategy: "OPTIMIZED_MULTI_PLATFORM_SPLIT",
+        strategyName: "Smart Split (Single Platform Recommended)",
+        rationale: `Tested all 15 platform combinations ($2^4 - 1 = 15$). Additional delivery fees exceed shelf savings, making a single cart on ${bestSingle.strategyName} the most economical choice.`,
+      };
+    }
+
+    return {
+      pincode,
+      evaluatedSubsetsCount: evaluatedSubsets.length,
+      strategies: {
+        cheapestItemByItem,
+        cheapestSinglePlatform,
+        optimizedMultiPlatform,
+      },
+      singlePlatformRankings: singleEvaluations,
+      allSubsetEvaluations: evaluatedSubsets,
+      recommendation: {
+        winningStrategy:
+          optimizedMultiPlatform.savingsVsSinglePlatformPaise &&
+          optimizedMultiPlatform.savingsVsSinglePlatformPaise >= 2000
+            ? "OPTIMIZED_MULTI_PLATFORM_SPLIT"
+            : "CHEAPEST_SINGLE_PLATFORM",
+        netSavingsPaise: Math.max(0, optimizedMultiPlatform.savingsVsSinglePlatformPaise || 0),
+        rationale:
+          optimizedMultiPlatform.savingsVsSinglePlatformPaise &&
+          optimizedMultiPlatform.savingsVsSinglePlatformPaise >= 2000
+            ? `Splitting saves ₹${(optimizedMultiPlatform.savingsVsSinglePlatformPaise / 100).toFixed(
+                2
+              )} net after all delivery and handling fees.`
+            : `Single store on ${bestSingle.strategyName} is optimal; splitting adds fee overhead.`,
+        feeCliffWarnings: optimizedMultiPlatform.feeCliffWarnings,
+        hasUnknownFees: optimizedMultiPlatform.hasUnknownFees,
+      },
+    };
+  }
+
+  async generateShoppingHandoff(payload: any): Promise<ShoppingHandoffPayload> {
+    const storeCarts = payload.storeCarts || {};
+    const strategy = payload.strategy || "OPTIMIZED_MULTI_PLATFORM_SPLIT";
+    const strategyName = payload.strategyName || "Optimized Multi-Platform Split";
+    const pincode = payload.pincode || "110001";
+
+    let grandSubtotalPaise = 0;
+    let grandFeeMinPaise = 0;
+    let grandFeeMaxPaise = 0;
+    let grandHasUnknownFees = false;
+
+    const platforms: any[] = [];
+    const markdownLines: string[] = [
+      `# 🛒 GrocAI Multi-Store Shopping Checklist`,
+      `**Strategy:** ${strategyName} | **Pincode:** ${pincode}`,
+      `*Disclaimer: GrocAI uses NullCartAdapter (createCart: false, automatedCheckout: false). Never stores credentials or auto-purchases.*`,
+      ``,
+    ];
+
+    for (const [pid, cart] of Object.entries(storeCarts) as [PlatformId, StoreCartEvaluation][]) {
+      const meta = PLATFORM_METADATA[pid];
+      grandSubtotalPaise += cart.subtotalPaise;
+      grandFeeMinPaise += cart.feeBreakdown.totalFeeMinPaise;
+      grandFeeMaxPaise += cart.feeBreakdown.totalFeeMaxPaise;
+      if (cart.hasUnknownFees) grandHasUnknownFees = true;
+
+      const storeChecklistLines: string[] = [
+        `## 🏪 ${meta.name}`,
+        `*Estimated: ${formatPaiseToRupees(cart.totalMinPaise)}${
+          cart.hasUnknownFees ? ` – ${formatPaiseToRupees(cart.totalMaxPaise)}` : ""
+        } (Subtotal ${formatPaiseToRupees(cart.subtotalPaise)} + Fees ${formatPaiseToRupees(
+          cart.feeBreakdown.totalFeeMinPaise
+        )})*`,
+      ];
+
+      const items = cart.items.map((it) => {
+        const itemLine = `- [ ] ${it.matchedTitle} x ${it.quantity} — ${formatPaiseToRupees(
+          it.lineTotalPaise
+        )} ([Search on ${meta.name}](${it.searchUrl}))`;
+        storeChecklistLines.push(itemLine);
+        return {
+          title: it.matchedTitle,
+          brand: it.brand,
+          variant: undefined,
+          quantity: it.quantity,
+          unitPricePaise: it.unitPricePaise,
+          totalPricePaise: it.lineTotalPaise,
+          unitPriceRupees: it.unitPricePaise / 100,
+          totalPriceRupees: it.lineTotalPaise / 100,
+          productUrl: it.productUrl,
+          searchUrl: it.searchUrl,
+          isDeepLink: false,
+          checkboxMarkdown: itemLine,
+        };
+      });
+
+      markdownLines.push(...storeChecklistLines, ``);
+
+      platforms.push({
+        platform: pid,
+        platformName: meta.name,
+        items,
+        subtotalPaise: cart.subtotalPaise,
+        subtotalRupees: cart.subtotalPaise / 100,
+        estimatedFeesRupees: cart.feeBreakdown.totalFeeMinPaise / 100,
+        hasUnknownFees: cart.hasUnknownFees,
+        estimatedTotalRupees: cart.totalMinPaise / 100,
+        estimatedTotalMinPaise: cart.totalMinPaise,
+        estimatedTotalMaxPaise: cart.totalMaxPaise,
+        meetsMinimumOrder: true,
+        checklistText: storeChecklistLines.join("\n"),
+        cartReviewUrl: meta.websiteUrl,
+        storeChecklistMarkdown: storeChecklistLines.join("\n"),
+        unknownFeeExplanation: cart.hasUnknownFees
+          ? "Handling fee dynamic ₹5 - ₹15 (minPaise: 500, maxPaise: 1500); verify at checkout."
+          : undefined,
+      });
+    }
+
+    return {
+      handoffId: `hnd-${Date.now()}`,
+      optimizationId: payload.optimizationId,
+      pincode,
+      strategy,
+      strategyName,
+      timestamp: new Date().toISOString(),
+      method: "links_and_checklist",
+      isEstimate: true,
+      notice:
+        "Official Checkout Disclaimer (NullCartAdapter Active): GrocAI never stores credentials, triggers checkout, or auto-purchases. Complete your purchase directly inside each merchant's official application.",
+      capabilities: {
+        createCart: false,
+        automatedCheckout: false,
+        searchDeepLink: true,
+        checklistHandoff: true,
+      },
+      markdownChecklist: markdownLines.join("\n"),
+      grandTotalPaise: {
+        subtotalPaise: grandSubtotalPaise,
+        feeMinPaise: grandFeeMinPaise,
+        feeMaxPaise: grandFeeMaxPaise,
+        estimatedTotalMinPaise: grandSubtotalPaise + grandFeeMinPaise,
+        estimatedTotalMaxPaise: grandSubtotalPaise + grandFeeMaxPaise,
+        hasUnknownFees: grandHasUnknownFees,
+      },
+      grandTotalRupees: {
+        subtotal: formatPaiseToRupees(grandSubtotalPaise),
+        estimatedTotalMin: formatPaiseToRupees(grandSubtotalPaise + grandFeeMinPaise),
+        estimatedTotalMax: formatPaiseToRupees(grandSubtotalPaise + grandFeeMaxPaise),
+      },
+      platforms,
     };
   }
 }

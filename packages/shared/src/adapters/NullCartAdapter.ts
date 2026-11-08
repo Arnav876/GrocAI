@@ -26,7 +26,7 @@ export class NullCartAdapter {
     return false;
   }
 
-  getCapabilities(): CartCapabilities {
+  static getCapabilities(): CartCapabilities {
     return {
       createCart: false,
       automatedCheckout: false,
@@ -35,6 +35,10 @@ export class NullCartAdapter {
       searchDeepLink: true,
       checklistHandoff: true,
     };
+  }
+
+  getCapabilities(): CartCapabilities {
+    return NullCartAdapter.getCapabilities();
   }
 
   createCart(): never {

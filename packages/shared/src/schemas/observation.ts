@@ -84,7 +84,10 @@ export const NormalizedObservationSchema = z
     observedAt: z.string().datetime({ message: 'observedAt must be a valid ISO-8601 timestamp' }),
     dataSource: DataSourceEnum,
     verificationStatus: VerificationStatusEnum,
+    normalizedUnitPricePaise: z.number().int().nonnegative().optional(),
+    unit: z.string().optional(),
   })
+  .passthrough()
   .refine((data) => data.originalPricePaise >= data.pricePaise, {
     message: 'originalPricePaise must be greater than or equal to pricePaise',
     path: ['originalPricePaise'],

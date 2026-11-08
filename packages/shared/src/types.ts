@@ -470,7 +470,7 @@ export interface ShoppingHandoffResponse {
 export interface PlatformHealthStatus {
   id: PlatformId;
   name: string;
-  mode: "mock" | "manual" | "partner_feed" | "authorized_api" | "permitted_page";
+  mode: "mock" | "manual" | "partner_feed" | "authorized_api" | "permitted_page" | "headed_worker" | "manual_assisted";
   enabled: boolean;
   capabilities: PlatformCapabilities;
   status: "healthy" | "degraded" | "disabled" | "offline";
