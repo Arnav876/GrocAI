@@ -55,7 +55,26 @@ async function main() {
       serviceableArea: "MG Road / Brigade Road",
     },
   });
-  console.log("Seeded serviceable locations (Delhi 110001 & Bengaluru 560001).");
+
+  await prisma.location.upsert({
+    where: { locationKey: "bengaluru_560064" },
+    update: {
+      pincode: "560064",
+      city: "Bengaluru North",
+      latitude: 13.1007,
+      longitude: 77.5963,
+      serviceableArea: "Yelahanka / Avalahalli",
+    },
+    create: {
+      locationKey: "bengaluru_560064",
+      pincode: "560064",
+      city: "Bengaluru North",
+      latitude: 13.1007,
+      longitude: 77.5963,
+      serviceableArea: "Yelahanka / Avalahalli",
+    },
+  });
+  console.log("Seeded serviceable locations (Delhi 110001, Bengaluru 560001 & Bengaluru 560064).");
 
   // 1. Seed Categories
   for (const cat of MOCK_CATEGORIES) {
@@ -172,39 +191,42 @@ async function main() {
       },
     });
 
-    for (const pid of SUPPORTED_PLATFORMS) {
-      const platData = prod.platformPrices[pid];
-      if (platData) {
-        await prisma.platformListing.upsert({
-          where: {
-            productId_platform_locationKey: {
+    const seededLocationKeys = ["delhi_110001", "bengaluru_560001", "bengaluru_560064"];
+    for (const locKey of seededLocationKeys) {
+      for (const pid of SUPPORTED_PLATFORMS) {
+        const platData = prod.platformPrices[pid];
+        if (platData) {
+          await prisma.platformListing.upsert({
+            where: {
+              productId_platform_locationKey: {
+                productId: prod.id,
+                platform: pid,
+                locationKey: locKey,
+              },
+            },
+            update: {
+              currentPricePaise: platData.pricePaise || null,
+              availability: platData.availability,
+              isStale: platData.isStale,
+              confidence: platData.confidence,
+              sourceType: platData.sourceType,
+              searchUrl: platData.searchUrl,
+              lastObservedAt: platData.observedAt ? new Date(platData.observedAt) : new Date(),
+            },
+            create: {
               productId: prod.id,
               platform: pid,
-              locationKey: "delhi_110001",
+              locationKey: locKey,
+              currentPricePaise: platData.pricePaise || null,
+              availability: platData.availability,
+              isStale: platData.isStale,
+              confidence: platData.confidence,
+              sourceType: platData.sourceType,
+              searchUrl: platData.searchUrl,
+              lastObservedAt: platData.observedAt ? new Date(platData.observedAt) : new Date(),
             },
-          },
-          update: {
-            currentPricePaise: platData.pricePaise || null,
-            availability: platData.availability,
-            isStale: platData.isStale,
-            confidence: platData.confidence,
-            sourceType: platData.sourceType,
-            searchUrl: platData.searchUrl,
-            lastObservedAt: platData.observedAt ? new Date(platData.observedAt) : new Date(),
-          },
-          create: {
-            productId: prod.id,
-            platform: pid,
-            locationKey: "delhi_110001",
-            currentPricePaise: platData.pricePaise || null,
-            availability: platData.availability,
-            isStale: platData.isStale,
-            confidence: platData.confidence,
-            sourceType: platData.sourceType,
-            searchUrl: platData.searchUrl,
-            lastObservedAt: platData.observedAt ? new Date(platData.observedAt) : new Date(),
-          },
-        });
+          });
+        }
       }
     }
   }
@@ -237,8 +259,9 @@ async function main() {
   }
   console.log(`Seeded ${SEED_CANONICAL_PRODUCTS.length} CanonicalProducts.`);
 
-  // 5. Seed 14-Field PlatformObservations (Delhi 110001 and Bengaluru 560001)
+  // 5. Seed 14-Field PlatformObservations (560064, 110001, 560001)
   const targetPincodes = [
+    { pincode: "560064", locationKey: "bengaluru_560064" },
     { pincode: "110001", locationKey: "delhi_110001" },
     { pincode: "560001", locationKey: "bengaluru_560001" },
   ];

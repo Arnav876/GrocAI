@@ -13,6 +13,7 @@ import {
 import { useBasket, BasketItem } from "../context/BasketContext.js";
 import { defaultNLParser } from "../services/naturalLanguageParser.js";
 import { formatINR, UserPreferences } from "@groqai/shared";
+import { soundEffects } from "../services/soundEffects.js";
 
 export const GroceryListPage: React.FC = () => {
   const {
@@ -74,6 +75,7 @@ export const GroceryListPage: React.FC = () => {
         addItem(it);
       }
       if (result.items.length > 0) {
+        soundEffects.playTaskCompleteSound();
         setNlNotice(
           `Parsed and added ${result.items.length} item${
             result.items.length > 1 ? "s" : ""
@@ -81,9 +83,11 @@ export const GroceryListPage: React.FC = () => {
         );
         setNlText("");
       } else {
+        soundEffects.playErrorSound();
         setNlNotice("Could not parse items. Please check the format.");
       }
     } catch (err) {
+      soundEffects.playErrorSound();
       setNlNotice("Failed to parse text notes.");
     } finally {
       setIsParsingNL(false);
@@ -110,6 +114,7 @@ export const GroceryListPage: React.FC = () => {
         <div className="flex items-center gap-3">
           {items.length > 0 && (
             <button
+              type="button"
               onClick={clearItems}
               className="text-xs font-bold text-red-600 hover:text-red-700 hover:underline px-3 py-2"
             >
@@ -118,6 +123,7 @@ export const GroceryListPage: React.FC = () => {
           )}
 
           <button
+            type="button"
             onClick={handleProceedToOptimize}
             disabled={items.length === 0}
             className={`flex items-center gap-2 px-6 py-3 rounded-full text-sm font-bold shadow-sm transition-all ${
@@ -272,7 +278,7 @@ export const GroceryListPage: React.FC = () => {
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {items.map((it: BasketItem, idx: number) => (
-                      <tr key={idx} className="hover:bg-gray-50/50">
+                      <tr key={`${it.canonicalProductId || it.productId || it.query}-${idx}`} className="hover:bg-gray-50/50">
                         <td className="py-3 px-4 font-bold text-brand-navy">
                           <div>{it.query}</div>
                           {it.matchedProduct && (
@@ -285,6 +291,7 @@ export const GroceryListPage: React.FC = () => {
                         <td className="py-3 px-3">
                           <div className="flex items-center gap-1.5">
                             <button
+                              type="button"
                               onClick={() => updateQuantity(idx, it.quantity - 1)}
                               className="w-5 h-5 rounded border border-gray-300 flex items-center justify-center font-bold hover:bg-gray-100"
                             >
@@ -294,6 +301,7 @@ export const GroceryListPage: React.FC = () => {
                               {it.quantity}
                             </span>
                             <button
+                              type="button"
                               onClick={() => updateQuantity(idx, it.quantity + 1)}
                               className="w-5 h-5 rounded border border-gray-300 flex items-center justify-center font-bold hover:bg-gray-100"
                             >
@@ -324,6 +332,7 @@ export const GroceryListPage: React.FC = () => {
 
                         <td className="py-3 px-4 text-right">
                           <button
+                            type="button"
                             onClick={() => removeItem(idx)}
                             className="text-gray-400 hover:text-red-500 p-1 rounded transition-colors"
                             title="Remove item"
@@ -461,6 +470,7 @@ export const GroceryListPage: React.FC = () => {
 
             {/* Proceed Action Button */}
             <button
+              type="button"
               onClick={handleProceedToOptimize}
               disabled={items.length === 0}
               className={`w-full py-3.5 rounded-full text-xs font-bold flex items-center justify-center gap-2 shadow-sm transition-all ${

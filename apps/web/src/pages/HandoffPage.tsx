@@ -10,6 +10,7 @@ import {
   ShoppingBag,
 } from "lucide-react";
 import { apiClient } from "../services/apiClient.js";
+import { soundEffects } from "../services/soundEffects.js";
 import { ShoppingHandoffResponse, OptimizationStrategy, PLATFORM_METADATA } from "@groqai/shared";
 
 export const HandoffPage: React.FC = () => {
@@ -36,11 +37,13 @@ export const HandoffPage: React.FC = () => {
         if (mounted) {
           setHandoff(res);
           setLoading(false);
+          soundEffects.playTaskCompleteSound();
         }
       })
       .catch((err) => {
         console.error("Handoff generation failed:", err);
         if (mounted) setLoading(false);
+        soundEffects.playErrorSound();
       });
 
     return () => {
@@ -54,7 +57,7 @@ export const HandoffPage: React.FC = () => {
     setTimeout(() => setCopiedPlatform(null), 2500);
   };
 
-  if (loading) {
+  if (loading && !handoff) {
     return (
       <div className="max-w-container mx-auto px-4 py-20 text-center space-y-3">
         <div className="w-10 h-10 border-4 border-brand-green border-t-transparent rounded-full animate-spin mx-auto"></div>
@@ -181,6 +184,7 @@ export const HandoffPage: React.FC = () => {
                 <div className="flex items-center gap-3">
                   {/* Copy Checklist Button */}
                   <button
+                    type="button"
                     onClick={() => copyToClipboard(group.platform, group.checklistText)}
                     className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold border border-gray-300 bg-white hover:bg-gray-50 text-brand-navy transition-colors shadow-xs"
                   >

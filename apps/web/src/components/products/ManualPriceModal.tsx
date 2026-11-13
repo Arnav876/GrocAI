@@ -20,7 +20,7 @@ export const ManualPriceModal: React.FC<ManualPriceModalProps> = ({
   onClose,
   onSuccess,
   defaultTitle = "",
-  defaultPincode = "110001",
+  defaultPincode = "560064",
 }) => {
   const [title, setTitle] = useState(defaultTitle);
   const [packSize, setPackSize] = useState("1 L");
@@ -195,7 +195,7 @@ export const ManualPriceModal: React.FC<ManualPriceModalProps> = ({
                   maxLength={6}
                   value={pincode}
                   onChange={(e) => setPincode(e.target.value.replace(/\D/g, ""))}
-                  placeholder="110001"
+                  placeholder="560064"
                   required
                   className="w-full text-xs border border-brand-border rounded-xl px-3 py-2 font-medium focus:outline-none focus:border-brand-green"
                 />

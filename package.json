@@ -13,7 +13,9 @@
     "lint": "npm run lint --workspaces",
     "test": "npm run test --workspaces",
     "dev:web": "npm run dev --workspace=apps/web",
-    "dev:api": "npm run dev --workspace=apps/api"
+    "dev:api": "npm run dev --workspace=apps/api",
+    "obscura:serve": "./tools/obscura/obscura serve --port 9222 --stealth",
+    "obscura:mcp": "./tools/obscura/obscura mcp"
   },
   "devDependencies": {
     "typescript": "^5.4.5"

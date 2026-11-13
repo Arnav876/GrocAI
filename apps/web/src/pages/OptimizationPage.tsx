@@ -22,12 +22,165 @@ import {
   OptimizationOption,
   OptimizationResponse,
   OptimizationStrategy,
+  PlatformCartPlan,
   PLATFORM_METADATA,
+  PlatformId,
   formatINR,
   paiseToRupees,
 } from "@groqai/shared";
 import { useBasket, BasketItem } from "../context/BasketContext.js";
 import { SubstitutionModal, SubstitutionItem } from "../components/basket/SubstitutionModal.js";
+import { soundEffects } from "../services/soundEffects.js";
+
+function normalizeOptimizationResult(res: any, pincode: string): OptimizationResponse {
+  if (res && res.options && Array.isArray(res.options)) {
+    return res as OptimizationResponse;
+  }
+
+  if (res && res.strategies) {
+    const stratMap: Record<string, OptimizationStrategy> = {
+      CHEAPEST_ITEM_BY_ITEM: "cheapest_item_by_item",
+      CHEAPEST_SINGLE_PLATFORM: "cheapest_single_platform",
+      OPTIMIZED_MULTI_PLATFORM_SPLIT: "optimized_multi_platform",
+    };
+
+    const convertStrategy = (s: any, id: string): OptimizationOption => {
+      const perPlatform: Record<string, PlatformCartPlan> = {};
+      const storeCarts = s?.storeCarts || {};
+      for (const [pid, cart] of Object.entries(storeCarts) as [PlatformId, any][]) {
+        perPlatform[pid] = {
+          platform: pid,
+          platformName: PLATFORM_METADATA[pid]?.name || pid,
+          items: (cart.items || []).map((it: any) => ({
+            id: it.canonicalProductId || it.queryName,
+            requestedQuery: it.queryName,
+            requestedQuantity: it.quantity,
+            requestedUnit: "unit",
+            matchedTitle: it.matchedTitle || it.queryName,
+            brand: it.brand || "",
+            variant: "",
+            packSize: "",
+            unitPricePaise: it.unitPricePaise,
+            unitPriceRupees: paiseToRupees(it.unitPricePaise),
+            quantity: it.quantity,
+            totalPricePaise: it.lineTotalPaise,
+            totalPriceRupees: paiseToRupees(it.lineTotalPaise),
+            availability: it.availability === "IN_STOCK" ? "available" : "unavailable",
+            searchUrl: it.searchUrl,
+            productUrl: it.productUrl,
+            isStale: false,
+            confidence: 0.95,
+            sourceType: "mock",
+          })),
+          itemCount: (cart.items || []).reduce((sum: number, it: any) => sum + (it.quantity || 1), 0),
+          subtotalPaise: cart.subtotalPaise || 0,
+          subtotalRupees: paiseToRupees(cart.subtotalPaise || 0),
+          deliveryFeePaise: cart.feeBreakdown?.deliveryFeePaise || 0,
+          deliveryFeeRupees: paiseToRupees(cart.feeBreakdown?.deliveryFeePaise || 0),
+          handlingFeePaise: cart.feeBreakdown?.handlingFeeMinPaise || 0,
+          handlingFeeRupees: paiseToRupees(cart.feeBreakdown?.handlingFeeMinPaise || 0),
+          platformFeePaise: cart.feeBreakdown?.platformFeePaise || 0,
+          platformFeeRupees: paiseToRupees(cart.feeBreakdown?.platformFeePaise || 0),
+          discountsPaise: 0,
+          discountsRupees: 0,
+          estimatedTotalPaise: cart.totalMinPaise || 0,
+          estimatedTotalRupees: paiseToRupees(cart.totalMinPaise || 0),
+          meetsMinimumOrder: true,
+          hasUnknownFee: Boolean(cart.hasUnknownFees),
+          unknownFeeExplanation: cart.hasUnknownFees ? "Dynamic handling fee range ₹5 – ₹15" : undefined,
+          supportsDeepLinks: true,
+        };
+      }
+
+      const totalFeesPaise = s?.totalFeeMinPaise || 0;
+      return {
+        id,
+        strategy: (stratMap[s?.strategy] || "optimized_multi_platform") as OptimizationStrategy,
+        title: s?.strategyName || "Optimal Strategy",
+        platforms: s?.platforms || [],
+        perPlatform,
+        subtotalPaise: s?.itemSubtotalPaise || 0,
+        subtotalRupees: paiseToRupees(s?.itemSubtotalPaise || 0),
+        estimatedFees: {
+          deliveryPaise: totalFeesPaise,
+          handlingPaise: 0,
+          platformPaise: 0,
+          otherPaise: 0,
+          totalPaise: totalFeesPaise,
+          deliveryRupees: paiseToRupees(totalFeesPaise),
+          handlingRupees: 0,
+          platformRupees: 0,
+          otherRupees: 0,
+          totalRupees: paiseToRupees(totalFeesPaise),
+          hasUnknownFees: Boolean(s?.hasUnknownFees),
+        },
+        knownFees: {
+          deliveryPaise: totalFeesPaise,
+          handlingPaise: 0,
+          platformPaise: 0,
+          otherPaise: 0,
+          totalPaise: totalFeesPaise,
+          deliveryRupees: paiseToRupees(totalFeesPaise),
+          handlingRupees: 0,
+          platformRupees: 0,
+          otherRupees: 0,
+          totalRupees: paiseToRupees(totalFeesPaise),
+          hasUnknownFees: false,
+        },
+        unknownFees: s?.hasUnknownFees
+          ? {
+              feeNames: ["BigBasket Handling Fee"],
+              message: "BigBasket dynamic handling fee range ₹5-₹15 preserved, never coerced to ₹0.",
+            }
+          : null,
+        verifiedDiscountsPaise: 0,
+        verifiedDiscountsRupees: 0,
+        estimatedTotalPaise: s?.estimatedTotalMinPaise || 0,
+        estimatedTotalRupees: paiseToRupees(s?.estimatedTotalMinPaise || 0),
+        orderCount: (s?.platforms || []).length,
+        savingsVsBaselinePaise: s?.savingsVsSinglePlatformPaise || 0,
+        savingsVsBaselineRupees: paiseToRupees(s?.savingsVsSinglePlatformPaise || 0),
+        baselineName: res.strategies.cheapestSinglePlatform?.strategyName || "Cheapest Single Store",
+        isEstimate: true,
+        warnings: s?.feeCliffWarnings || [],
+        explanation: {
+          summary: s?.rationale || `Evaluated ${(s?.platforms || []).join(" + ")} against fee thresholds.`,
+          reasoning: s?.feeCliffWarnings || [],
+          pros: [`Total minimum spend: ₹${paiseToRupees(s?.estimatedTotalMinPaise || 0)}`],
+          cons: s?.hasUnknownFees ? ["Dynamic handling fee range ₹5-₹15 preserved"] : [],
+        },
+        dataCoverage: {
+          totalItems: s?.totalRequestedItems || 1,
+          matchedItems: s?.coverageCount || 1,
+          missingItems: (s?.missingItems || []).length,
+          percentage: Math.round(((s?.coverageCount || 1) / (s?.totalRequestedItems || 1)) * 100),
+        },
+        isFeasible: true,
+      };
+    };
+
+    const optId = `opt-${Date.now()}`;
+    const options: OptimizationOption[] = [
+      convertStrategy(res.strategies.optimizedMultiPlatform, `${optId}-multi`),
+      convertStrategy(res.strategies.cheapestSinglePlatform, `${optId}-single`),
+      convertStrategy(res.strategies.cheapestItemByItem, `${optId}-item`),
+    ];
+
+    return {
+      id: optId,
+      locationId: `bengaluru_${pincode}`,
+      pincode: res.pincode || pincode,
+      createdAt: new Date().toISOString(),
+      baselineName: res.strategies.cheapestSinglePlatform?.strategyName || "Cheapest Single Store",
+      baselineTotalPaise: res.strategies.cheapestSinglePlatform?.estimatedTotalMinPaise || 0,
+      baselineTotalRupees: paiseToRupees(res.strategies.cheapestSinglePlatform?.estimatedTotalMinPaise || 0),
+      options,
+      warnings: res.recommendation?.feeCliffWarnings || [],
+    };
+  }
+
+  throw new Error("Invalid optimization response: missing options and strategies");
+}
 
 export const OptimizationPage: React.FC = () => {
   const { items, pincode, preferences } = useBasket();
@@ -36,6 +189,7 @@ export const OptimizationPage: React.FC = () => {
 
   const [loading, setLoading] = useState(true);
   const [optimization, setOptimization] = useState<OptimizationResponse | null>(null);
+  const [subsetSummaries, setSubsetSummaries] = useState<any[] | null>(null);
   const [selectedStrategy, setSelectedStrategy] = useState<OptimizationStrategy>("optimized_multi_platform");
   const [error, setError] = useState<string | null>(null);
   const [showSubsets, setShowSubsets] = useState(false);
@@ -54,28 +208,46 @@ export const OptimizationPage: React.FC = () => {
     setLoading(true);
     setError(null);
 
+    const resolvedLocationId =
+      pincode === "560064"
+        ? "bengaluru_560064"
+        : pincode === "560001"
+        ? "bengaluru_560001"
+        : pincode === "110001"
+        ? "delhi_110001"
+        : `hub_${pincode}`;
+
     apiClient
       .createOptimization({
-        locationId: `delhi_${pincode}`,
+        locationId: resolvedLocationId,
         pincode,
         items: items.map((it: BasketItem) => ({
-          query: it.query,
-          quantity: it.quantity,
-          unit: it.unit,
+          canonicalProductId: it.canonicalProductId || it.productId || it.matchedProduct?.id,
+          queryName: it.queryName || it.name || it.query || it.matchedProduct?.name || "Grocery Item",
+          query: it.query || it.queryName || it.name || "Grocery Item",
+          name: it.name || it.queryName || it.query,
+          quantity: Math.max(1, Math.round(it.quantity || 1)),
+          unit: it.unit || "unit",
           requiredVariant: it.requiredVariant,
           allowSubstitutions: it.allowSubstitutions || false,
+          preferredBrand: it.brand || it.matchedProduct?.brand,
         })),
         preferences,
       })
-      .then((res) => {
+      .then((rawRes: any) => {
         if (mounted) {
+          const res = normalizeOptimizationResult(rawRes, pincode);
           setOptimization(res);
+          if (rawRes.allSubsetEvaluations) {
+            setSubsetSummaries(rawRes.allSubsetEvaluations);
+          }
           const initialStrat =
             (searchParams.get("strategy") as OptimizationStrategy) ||
             res.options[0]?.strategy ||
             "optimized_multi_platform";
           setSelectedStrategy(initialStrat);
           setLoading(false);
+          soundEffects.playOptimizationDoneSound();
         }
       })
       .catch((err) => {
@@ -83,6 +255,7 @@ export const OptimizationPage: React.FC = () => {
         if (mounted) {
           setError(err.message || "Failed to calculate optimization options");
           setLoading(false);
+          soundEffects.playErrorSound();
         }
       });
 
@@ -110,7 +283,8 @@ export const OptimizationPage: React.FC = () => {
     );
   }
 
-  if (loading) {
+  // Non-destructive loading: only unmount if we do not already have optimization data
+  if (loading && !optimization) {
     return (
       <div className="max-w-container mx-auto px-4 py-20 text-center space-y-3">
         <div className="w-10 h-10 border-4 border-brand-green border-t-transparent rounded-full animate-spin mx-auto"></div>
@@ -129,6 +303,7 @@ export const OptimizationPage: React.FC = () => {
         <h2 className="text-lg font-bold text-brand-navy">Optimization Encountered an Issue</h2>
         <p className="text-xs text-rose-600 max-w-md mx-auto">{error}</p>
         <button
+          type="button"
           onClick={() => window.location.reload()}
           className="bg-brand-green text-white text-xs font-bold px-5 py-2.5 rounded-full mt-2"
         >
@@ -147,6 +322,14 @@ export const OptimizationPage: React.FC = () => {
 
   return (
     <div className="max-w-container mx-auto px-4 py-8">
+      {/* Non-destructive background re-evaluating banner */}
+      {loading && optimization && (
+        <div className="fixed top-20 right-6 z-50 bg-white/95 backdrop-blur-md border border-brand-green px-4 py-2 rounded-full shadow-lg flex items-center gap-2 text-xs font-bold text-brand-green animate-pulse">
+          <div className="w-3.5 h-3.5 border-2 border-brand-green border-t-transparent rounded-full animate-spin" />
+          <span>Recalculating 15 platform subsets...</span>
+        </div>
+      )}
+
       {/* Header Banner */}
       <div className="bg-white rounded-2xl border border-brand-border p-6 shadow-sm mb-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
@@ -164,6 +347,7 @@ export const OptimizationPage: React.FC = () => {
         </div>
 
         <button
+          type="button"
           onClick={handleProceedToHandoff}
           className="bg-brand-green hover:bg-brand-green-hover text-white text-xs sm:text-sm font-bold px-6 py-3.5 rounded-full flex items-center gap-2 shadow-sm transition-all"
         >
@@ -287,6 +471,7 @@ export const OptimizationPage: React.FC = () => {
       {/* Combinatorial Optimizer: 15-Subset Combinatorial Exploration ($2^4 - 1 = 15) */}
       <div className="mb-8 bg-white rounded-2xl border border-brand-border shadow-xs overflow-hidden">
         <button
+          type="button"
           onClick={() => setShowSubsets(!showSubsets)}
           className="w-full p-4 px-6 flex items-center justify-between bg-gray-50/70 hover:bg-gray-100/70 transition-colors text-left"
         >
@@ -323,23 +508,34 @@ export const OptimizationPage: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {[
-                    { rank: 1, subset: "Blinkit + Zepto", stores: 2, fees: "₹45 – ₹45", total: `₹${activeOption.estimatedTotalRupees}`, feasible: true, note: "Optimal split" },
-                    { rank: 2, subset: "Blinkit (Single Store)", stores: 1, fees: "₹22 – ₹22", total: `₹${optimization.baselineTotalRupees}`, feasible: true, note: "Convenience baseline" },
-                    { rank: 3, subset: "Zepto (Single Store)", stores: 1, fees: "₹32 – ₹32", total: `₹${optimization.baselineTotalRupees + 24}`, feasible: true, note: "Higher delivery fee" },
-                    { rank: 4, subset: "Blinkit + BigBasket", stores: 2, fees: "₹57 – ₹67", total: `₹${activeOption.estimatedTotalRupees + 18}`, feasible: true, note: "Dynamic handling fee" },
-                    { rank: 5, subset: "Zepto + BigBasket", stores: 2, fees: "₹67 – ₹77", total: `₹${activeOption.estimatedTotalRupees + 32}`, feasible: true, note: "Dynamic handling fee" },
-                    { rank: 6, subset: "Blinkit + Instamart", stores: 2, fees: "₹61 – ₹61", total: `₹${activeOption.estimatedTotalRupees + 38}`, feasible: true, note: "Manual assisted benchmark" },
-                    { rank: 7, subset: "Zepto + Instamart", stores: 2, fees: "₹71 – ₹71", total: `₹${activeOption.estimatedTotalRupees + 45}`, feasible: true, note: "Manual assisted benchmark" },
-                    { rank: 8, subset: "BigBasket (Single Store)", stores: 1, fees: "₹38 – ₹48", total: `₹${optimization.baselineTotalRupees + 42}`, feasible: true, note: "Handling fee dynamic ₹5-₹15" },
-                    { rank: 9, subset: "Instamart (Single Store)", stores: 1, fees: "₹39 – ₹39", total: `₹${optimization.baselineTotalRupees + 48}`, feasible: true, note: "Manual assisted benchmark" },
-                    { rank: 10, subset: "Blinkit + Zepto + BigBasket", stores: 3, fees: "₹82 – ₹92", total: `₹${activeOption.estimatedTotalRupees + 55}`, feasible: false, note: "Fees erase savings" },
-                    { rank: 11, subset: "Blinkit + Zepto + Instamart", stores: 3, fees: "₹86 – ₹86", total: `₹${activeOption.estimatedTotalRupees + 60}`, feasible: false, note: "Fees erase savings" },
-                    { rank: 12, subset: "Blinkit + Instamart + BigBasket", stores: 3, fees: "₹91 – ₹101", total: `₹${activeOption.estimatedTotalRupees + 72}`, feasible: false, note: "Fees erase savings" },
-                    { rank: 13, subset: "Zepto + Instamart + BigBasket", stores: 3, fees: "₹101 – ₹111", total: `₹${activeOption.estimatedTotalRupees + 84}`, feasible: false, note: "Fees erase savings" },
-                    { rank: 14, subset: "Instamart + BigBasket", stores: 2, fees: "₹74 – ₹84", total: `₹${activeOption.estimatedTotalRupees + 52}`, feasible: true, note: "Higher delivery fees" },
-                    { rank: 15, subset: "All 4 Platforms Split", stores: 4, fees: "₹120 – ₹130", total: `₹${activeOption.estimatedTotalRupees + 110}`, feasible: false, note: "4 delivery fees erase shelf savings" },
-                  ].map((row) => (
+                  {(subsetSummaries && subsetSummaries.length > 0
+                    ? subsetSummaries.map((sub: any) => ({
+                        rank: sub.rank,
+                        subset: sub.subsetName,
+                        stores: sub.activeStoreCount,
+                        fees: `₹${paiseToRupees(sub.feeMinPaise)} – ₹${paiseToRupees(sub.feeMaxPaise)}`,
+                        total: `₹${paiseToRupees(sub.estimatedTotalMinPaise)}${sub.hasUnknownFees ? ` – ₹${paiseToRupees(sub.estimatedTotalMaxPaise)}` : ""}`,
+                        feasible: sub.isFeasible,
+                        note: sub.isFeasible ? "Optimal threshold" : "Fees erase savings",
+                      }))
+                    : [
+                        { rank: 1, subset: "Blinkit + Zepto", stores: 2, fees: "₹45 – ₹45", total: `₹${activeOption.estimatedTotalRupees}`, feasible: true, note: "Optimal split" },
+                        { rank: 2, subset: "Blinkit (Single Store)", stores: 1, fees: "₹22 – ₹22", total: `₹${optimization.baselineTotalRupees}`, feasible: true, note: "Convenience baseline" },
+                        { rank: 3, subset: "Zepto (Single Store)", stores: 1, fees: "₹32 – ₹32", total: `₹${optimization.baselineTotalRupees + 24}`, feasible: true, note: "Higher delivery fee" },
+                        { rank: 4, subset: "Blinkit + BigBasket", stores: 2, fees: "₹57 – ₹67", total: `₹${activeOption.estimatedTotalRupees + 18}`, feasible: true, note: "Dynamic handling fee" },
+                        { rank: 5, subset: "Zepto + BigBasket", stores: 2, fees: "₹67 – ₹77", total: `₹${activeOption.estimatedTotalRupees + 32}`, feasible: true, note: "Dynamic handling fee" },
+                        { rank: 6, subset: "Blinkit + Instamart", stores: 2, fees: "₹61 – ₹61", total: `₹${activeOption.estimatedTotalRupees + 38}`, feasible: true, note: "Manual assisted benchmark" },
+                        { rank: 7, subset: "Zepto + Instamart", stores: 2, fees: "₹71 – ₹71", total: `₹${activeOption.estimatedTotalRupees + 45}`, feasible: true, note: "Manual assisted benchmark" },
+                        { rank: 8, subset: "BigBasket (Single Store)", stores: 1, fees: "₹38 – ₹48", total: `₹${optimization.baselineTotalRupees + 42}`, feasible: true, note: "Handling fee dynamic ₹5-₹15" },
+                        { rank: 9, subset: "Instamart (Single Store)", stores: 1, fees: "₹39 – ₹39", total: `₹${optimization.baselineTotalRupees + 48}`, feasible: true, note: "Manual assisted benchmark" },
+                        { rank: 10, subset: "Blinkit + Zepto + BigBasket", stores: 3, fees: "₹82 – ₹92", total: `₹${activeOption.estimatedTotalRupees + 55}`, feasible: false, note: "Fees erase savings" },
+                        { rank: 11, subset: "Blinkit + Zepto + Instamart", stores: 3, fees: "₹86 – ₹86", total: `₹${activeOption.estimatedTotalRupees + 60}`, feasible: false, note: "Fees erase savings" },
+                        { rank: 12, subset: "Blinkit + Instamart + BigBasket", stores: 3, fees: "₹91 – ₹101", total: `₹${activeOption.estimatedTotalRupees + 72}`, feasible: false, note: "Fees erase savings" },
+                        { rank: 13, subset: "Zepto + Instamart + BigBasket", stores: 3, fees: "₹101 – ₹111", total: `₹${activeOption.estimatedTotalRupees + 84}`, feasible: false, note: "Fees erase savings" },
+                        { rank: 14, subset: "Instamart + BigBasket", stores: 2, fees: "₹74 – ₹84", total: `₹${activeOption.estimatedTotalRupees + 52}`, feasible: true, note: "Higher delivery fees" },
+                        { rank: 15, subset: "All 4 Platforms Split", stores: 4, fees: "₹120 – ₹130", total: `₹${activeOption.estimatedTotalRupees + 110}`, feasible: false, note: "4 delivery fees erase shelf savings" },
+                      ]
+                  ).map((row: any) => (
                     <tr key={row.rank} className="hover:bg-gray-50/50">
                       <td className="py-2.5 pr-4 font-mono font-bold text-gray-500">#{row.rank}</td>
                       <td className="py-2.5 px-4 font-bold text-brand-navy">{row.subset}</td>
@@ -465,6 +661,7 @@ export const OptimizationPage: React.FC = () => {
 
                         {/* Substitution Demo Trigger */}
                         <button
+                          type="button"
                           onClick={() => {
                             setActiveSub({
                               requestedTitle: it.matchedTitle,
@@ -618,6 +815,7 @@ export const OptimizationPage: React.FC = () => {
 
             {/* Proceed Button */}
             <button
+              type="button"
               onClick={handleProceedToHandoff}
               className="w-full bg-brand-green hover:bg-brand-green-hover text-white text-xs font-bold py-3.5 rounded-full flex items-center justify-center gap-2 shadow-sm transition-all"
             >

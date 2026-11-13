@@ -64,7 +64,7 @@ export class GroqApiClient {
     return res.json();
   }
 
-  async getDataProvenance(pincode: string = "110001"): Promise<DataProvenance> {
+  async getDataProvenance(pincode: string = "560064"): Promise<DataProvenance> {
     if (this.isUsingMock()) {
       return mockApiService.getDataProvenance(pincode);
     }
@@ -138,7 +138,7 @@ export class GroqApiClient {
     const res = await fetch(`${API_BASE_URL}/api/products/${encodeURIComponent(id)}/refresh`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pincode: pincode || "110001" }),
+      body: JSON.stringify({ pincode: pincode || "560064" }),
     });
     if (!res.ok) throw new Error(`Failed to refresh product prices: ${res.statusText}`);
     return res.json();
@@ -361,7 +361,7 @@ export class GroqApiClient {
   async enqueueRefresh(
     queries: string[],
     platforms: string[] = ["blinkit", "zepto", "bigbasket"],
-    locationKey: string = "delhi_110001"
+    locationKey: string = "bengaluru_560064"
   ): Promise<{ status: string; jobId: string; jobIds: string[]; message: string }> {
     if (this.isUsingMock()) {
       return { status: "queued", jobId: "mock-job-1", jobIds: ["mock-job-1"], message: "Mock ingestion job" };

@@ -8,6 +8,7 @@ import {
   describeBlockedTargetResponse,
 } from "./targetResponses.js";
 import { PlatformScraper, ScrapeContext } from "../types.js";
+import { obscuraService } from "./obscuraService.js";
 
 export class BrowserManager {
   private activeContexts: Map<PlatformId, BrowserContext> = new Map();
@@ -16,6 +17,22 @@ export class BrowserManager {
     const existing = this.activeContexts.get(platform);
     if (existing) {
       return existing;
+    }
+
+    const engine = (process.env.BROWSER_ENGINE || "").toLowerCase();
+    const isObscuraRequested = engine === "obscura" || process.env.OBSCURA_ENABLED === "true";
+
+    if (isObscuraRequested) {
+      try {
+        console.log(`[BrowserManager] Connecting to Obscura stealth browser for ${platform}...`);
+        const { context } = await obscuraService.connectPlaywright();
+        this.activeContexts.set(platform, context);
+        return context;
+      } catch (err: any) {
+        console.warn(
+          `[BrowserManager] Failed to connect to Obscura (${err.message}). Falling back to Chromium.`
+        );
+      }
     }
 
     // Default to headless so background ingestion does not steal window focus

@@ -24,7 +24,9 @@ export const PincodeModal: React.FC<PincodeModalProps> = ({ isOpen, onClose }) =
     }
     setError(null);
     setPincode(code);
-    if (code === "110001") {
+    if (code === "560064") {
+      setLocationName("Bengaluru (Yelahanka / Avalahalli) — 560064");
+    } else if (code === "110001") {
       setLocationName("Connaught Place, Central Delhi");
     } else if (code === "560001") {
       setLocationName("MG Road, Bengaluru");
@@ -51,10 +53,10 @@ export const PincodeModal: React.FC<PincodeModalProps> = ({ isOpen, onClose }) =
       navigator.geolocation.getCurrentPosition(
         (position) => {
           setGpsLoading(false);
-          // In mock environment, map coordinates to central Delhi hub
-          setInputPincode("110001");
-          setPincode("110001");
-          setLocationName("Central Delhi (Detected via GPS)");
+          // Map coordinates to Bengaluru Yelahanka hub
+          setInputPincode("560064");
+          setPincode("560064");
+          setLocationName("Bengaluru (Yelahanka / Avalahalli) — 560064");
           onClose();
         },
         (err) => {
@@ -73,6 +75,7 @@ export const PincodeModal: React.FC<PincodeModalProps> = ({ isOpen, onClose }) =
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
       <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-brand-border relative animate-in fade-in zoom-in-95 duration-150">
         <button
+          type="button"
           onClick={onClose}
           className="absolute top-4 right-4 p-1.5 rounded-full text-brand-grey hover:bg-gray-100 transition-colors"
         >
@@ -111,7 +114,7 @@ export const PincodeModal: React.FC<PincodeModalProps> = ({ isOpen, onClose }) =
                   setInputPincode(e.target.value.replace(/\D/g, ""));
                   setError(null);
                 }}
-                placeholder="e.g. 110001"
+                placeholder="e.g. 560064"
                 className="flex-1 px-4 py-2.5 rounded-xl border border-gray-300 focus:outline-none focus:border-brand-green font-semibold text-sm"
               />
               <button
@@ -131,8 +134,9 @@ export const PincodeModal: React.FC<PincodeModalProps> = ({ isOpen, onClose }) =
           </span>
           <div className="flex flex-wrap gap-2">
             {[
+              { code: "560064", label: "Bengaluru - Yelahanka / Avalahalli (560064)" },
               { code: "110001", label: "Central Delhi (110001)" },
-              { code: "560001", label: "Bengaluru (560001)" },
+              { code: "560001", label: "Bengaluru - MG Road (560001)" },
               { code: "400001", label: "South Mumbai (400001)" },
             ].map((hub) => (
               <button
@@ -163,6 +167,7 @@ export const PincodeModal: React.FC<PincodeModalProps> = ({ isOpen, onClose }) =
 
         {/* GPS location with permission request */}
         <button
+          type="button"
           onClick={handleRequestPreciseLocation}
           disabled={gpsLoading}
           className="w-full flex items-center justify-center gap-2 p-3 rounded-xl border border-brand-green/30 bg-brand-green-light hover:bg-brand-green/20 text-brand-green text-xs font-bold transition-colors"

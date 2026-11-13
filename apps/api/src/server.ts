@@ -33,10 +33,12 @@ import {
   ShoppingHandoffService,
   buildPlatformSearchDeepLink,
 } from "./services/shoppingHandoffService.js";
+import { SEED_CANONICAL_PRODUCTS } from "./fixtures/seedFixtures.js";
 import { PostgresScrapeQueue } from "./ingestion/queue.js";
 import { toObservation } from "./ingestion/normalize.js";
 import { createManualAssistedObservation } from "./ingestion/payloadNormalizers.js";
 import { openapiSpecification } from "./docs/openapiSpec.js";
+import { obscuraService } from "./ingestion/browser/obscuraService.js";
 
 export interface ServerOptions {
   /**
@@ -72,6 +74,12 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
   // Live refresh is handled by the ingestion queue/worker. Instamart is
   // intentionally excluded because it is manual/assisted capture only.
   const INGESTION_PLATFORMS: PlatformId[] = ["blinkit", "zepto", "bigbasket"];
+
+  function resolveLocationKey(pincode: string): string {
+    if (pincode === "560064") return "bengaluru_560064";
+    if (pincode === "560001") return "bengaluru_560001";
+    return `delhi_${pincode}`;
+  }
 
   async function enqueueProductRefresh(
     queries: string[],
@@ -235,7 +243,7 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
         });
       }
 
-      const locationKey = `delhi_${pincode}`;
+      const locationKey = resolveLocationKey(pincode);
 
       const whereClause: any = {};
       if (category) {
@@ -263,9 +271,7 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
       const products = await prisma.product.findMany({
         where: whereClause,
         include: {
-          listings: {
-            where: { locationKey },
-          },
+          listings: true,
         },
       });
 
@@ -275,7 +281,15 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
         let lowestPlatform: PlatformId = "blinkit";
 
         const platformPrices: any = {};
-        for (const l of prod.listings || []) {
+        let relevantListings = (prod.listings || []).filter((l: any) => l.locationKey === locationKey);
+        if (relevantListings.length === 0) {
+          relevantListings = (prod.listings || []).filter((l: any) => l.locationKey === "bengaluru_560064");
+        }
+        if (relevantListings.length === 0) {
+          relevantListings = (prod.listings || []).filter((l: any) => l.locationKey === "delhi_110001");
+        }
+
+        for (const l of relevantListings) {
           const pid = l.platform as PlatformId;
           const pricePaise = l.currentPricePaise || undefined;
           const observedAtStr = l.lastObservedAt ? l.lastObservedAt.toISOString() : new Date().toISOString();
@@ -384,14 +398,12 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
       const { id } = req.params;
       const forceRefresh = req.query.refresh === "true";
       const pincode = (req.query.pincode as string) || "110001";
-      const locationKey = `delhi_${pincode}`;
+      const locationKey = resolveLocationKey(pincode);
 
       const prod = await prisma.product.findUnique({
         where: { id },
         include: {
-          listings: {
-            where: { locationKey },
-          },
+          listings: true,
         },
       });
 
@@ -409,7 +421,15 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
       let lowestPlatform: PlatformId = "blinkit";
       const platformPrices: any = {};
 
-      for (const l of prod.listings) {
+      let relevantListings = (prod.listings || []).filter((l: any) => l.locationKey === locationKey);
+      if (relevantListings.length === 0) {
+        relevantListings = (prod.listings || []).filter((l: any) => l.locationKey === "bengaluru_560064");
+      }
+      if (relevantListings.length === 0) {
+        relevantListings = (prod.listings || []).filter((l: any) => l.locationKey === "delhi_110001");
+      }
+
+      for (const l of relevantListings) {
         const pid = l.platform as PlatformId;
         const pricePaise = l.currentPricePaise || undefined;
         const observedAtStr = l.lastObservedAt ? l.lastObservedAt.toISOString() : new Date().toISOString();
@@ -482,15 +502,13 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
   app.post("/api/products/:id/refresh", async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { id } = req.params;
-      const pincode = req.body?.pincode || (req.query.pincode as string) || "110001";
-      const locationKey = `delhi_${pincode}`;
+      const pincode = req.body?.pincode || (req.query.pincode as string) || "560064";
+      const locationKey = resolveLocationKey(pincode);
 
       const prod = await prisma.product.findUnique({
         where: { id },
         include: {
-          listings: {
-            where: { locationKey },
-          },
+          listings: true,
         },
       });
 
@@ -506,7 +524,15 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
       let lowestPlatform: PlatformId = "blinkit";
       const platformPrices: any = {};
 
-      for (const l of prod.listings) {
+      let relevantListings = (prod.listings || []).filter((l: any) => l.locationKey === locationKey);
+      if (relevantListings.length === 0) {
+        relevantListings = (prod.listings || []).filter((l: any) => l.locationKey === "bengaluru_560064");
+      }
+      if (relevantListings.length === 0) {
+        relevantListings = (prod.listings || []).filter((l: any) => l.locationKey === "delhi_110001");
+      }
+
+      for (const l of relevantListings) {
         const pid = l.platform as PlatformId;
         const pricePaise = l.currentPricePaise || undefined;
         const observedAtStr = l.lastObservedAt ? l.lastObservedAt.toISOString() : new Date().toISOString();
@@ -587,8 +613,8 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
   // POST /api/products/sync
   app.post("/api/products/sync", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { productIds = [], query, items = [], pincode = "110001", forceRefresh = false } = req.body || {};
-      const locationKey = `delhi_${pincode}`;
+      const { productIds = [], query, items = [], pincode = "560064", forceRefresh = false } = req.body || {};
+      const locationKey = resolveLocationKey(pincode);
 
       let idsToSync: string[] = Array.isArray(productIds) ? [...productIds] : [];
       if (idsToSync.length === 0 && Array.isArray(items) && items.length > 0) {
@@ -823,14 +849,21 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
       let bestProd: any = null;
       let highestConf = -1;
 
-      for (const cand of allProducts) {
-        const m = defaultMatcher.match(
-          { query: rawTitle, packSize: explicitPackSize },
-          { id: cand.id, name: cand.name, brand: cand.brand, variant: cand.variant, packSize: cand.packSize }
-        );
-        if (m.isMatch && m.confidence > highestConf) {
-          highestConf = m.confidence;
-          bestProd = cand;
+      if (req.body?.productId) {
+        bestProd = allProducts.find((p) => p.id === req.body.productId) || null;
+        if (bestProd) highestConf = 1.0;
+      }
+
+      if (!bestProd) {
+        for (const cand of allProducts) {
+          const m = defaultMatcher.match(
+            { query: rawTitle, packSize: explicitPackSize },
+            { id: cand.id, name: cand.name, brand: cand.brand, variant: cand.variant, packSize: cand.packSize }
+          );
+          if (m.isMatch && m.confidence > highestConf) {
+            highestConf = m.confidence;
+            bestProd = cand;
+          }
         }
       }
 
@@ -841,7 +874,7 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
         quantity: explicitPackSize || bestProd?.packSize || "1 unit",
       });
 
-      const locationKey = `delhi_${normalized.pincode}`;
+      const locationKey = resolveLocationKey(normalized.pincode);
 
       // Persist PriceObservation
       const savedObs = await prisma.priceObservation.create({
@@ -995,22 +1028,32 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
   // POST /api/optimizations
   app.post("/api/optimizations", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      if ((req.body.pincode && !req.body.locationId) || req.body.items?.[0]?.queryName) {
+      if ((req.body.pincode && !req.body.locationId) || req.body.items?.[0]?.queryName || req.body.basketItems) {
         const result = await optimizationService.optimizeBasket(req.body);
         return res.status(201).json(result);
       }
 
       const parsed = OptimizationRequestSchema.parse(req.body);
 
+      // Normalize locationId based on pincode if needed
+      let resolvedLocId = parsed.locationId;
+      if (parsed.pincode === "560064" || resolvedLocId === "delhi_560064") {
+        resolvedLocId = "bengaluru_560064";
+      } else if (parsed.pincode === "560001" || resolvedLocId === "delhi_560001") {
+        resolvedLocId = "bengaluru_560001";
+      } else if (parsed.pincode === "110001") {
+        resolvedLocId = "delhi_110001";
+      }
+
       // 1. Build fee rules for the location without inventing unknown fees.
       const { feeRules, warnings: feeWarnings } =
-        await feeIntelligence.buildOptimizationFeeRules(parsed.locationId);
+        await feeIntelligence.buildOptimizationFeeRules(resolvedLocId);
 
       // 2. Fetch products and match items
       const allProducts = await prisma.product.findMany({
         include: {
           listings: {
-            where: { locationKey: parsed.locationId },
+            where: { locationKey: resolvedLocId },
           },
         },
       });
@@ -1033,6 +1076,38 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
           if (matchResult.isMatch && matchResult.confidence > highestConfidence) {
             highestConfidence = matchResult.confidence;
             bestProd = prod;
+          }
+        }
+
+        // Fallback to SEED_CANONICAL_PRODUCTS if not matched in DB catalog
+        if (!bestProd) {
+          const qTokens = q.split(/[\s,\-_/]+/).filter((t: string) => t.length > 2);
+          const seedMatch = SEED_CANONICAL_PRODUCTS.find((sp: any) => {
+            const spNameLower = sp.name.toLowerCase();
+            const matchesName = spNameLower.includes(q) || q.includes(spNameLower);
+            const matchesAlias = sp.aliases.some((a: string) => a.toLowerCase().includes(q) || q.includes(a.toLowerCase()));
+            const prodTokens = `${spNameLower} ${sp.slug} ${sp.category} ${sp.aliases.join(" ")}`.toLowerCase();
+            const hasTokenMatch = qTokens.length > 0 && qTokens.some((tok: string) => prodTokens.includes(tok));
+            return matchesName || matchesAlias || hasTokenMatch;
+          });
+
+          if (seedMatch) {
+            bestProd = {
+              id: seedMatch.id,
+              name: seedMatch.name,
+              brand: seedMatch.brand,
+              variant: seedMatch.variant,
+              packSize: seedMatch.standardPackSize,
+              listings: SUPPORTED_PLATFORMS.map((pid) => ({
+                platform: pid,
+                currentPricePaise: seedMatch.prices[pid]?.pricePaise || null,
+                availability: seedMatch.prices[pid]?.inStock ? "available" : "unavailable",
+                isStale: false,
+                confidence: 0.95,
+                sourceType: "seed_fixture",
+                searchUrl: undefined,
+              })),
+            };
           }
         }
 
@@ -1096,7 +1171,7 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
       await prisma.optimizationResult.create({
         data: {
           id: optId,
-          locationId: parsed.locationId,
+          locationId: resolvedLocId,
           pincode: parsed.pincode,
           baselineName: optResult.baselineName,
           baselineTotalPaise: optResult.baselineTotalPaise,
@@ -1107,7 +1182,7 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
 
       res.status(201).json({
         id: optId,
-        locationId: parsed.locationId,
+        locationId: resolvedLocId,
         pincode: parsed.pincode,
         createdAt: new Date().toISOString(),
         baselineName: optResult.baselineName,
@@ -1120,6 +1195,7 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
       if (err.name === "ZodError") {
         return res.status(400).json({ error: "Validation failed", details: err.errors });
       }
+      console.error("POST /api/optimizations error:", err);
       next(err);
     }
   });
@@ -1222,8 +1298,8 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
   // GET /api/data-provenance?pincode=110001&locationKey=delhi_110001
   app.get("/api/data-provenance", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const pincode = (req.query.pincode as string) || "110001";
-      const locationKey = (req.query.locationKey as string) || `delhi_${pincode}`;
+      const pincode = (req.query.pincode as string) || "560064";
+      const locationKey = (req.query.locationKey as string) || resolveLocationKey(pincode);
       const provenance = await dataProvenance.getForLocation(locationKey);
       return res.json(provenance);
     } catch (err) {
@@ -1318,6 +1394,36 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
       mode,
       message: `Platform ${pid} integration mode set to '${mode}'.`,
     });
+  });
+
+  // GET /api/admin/obscura/status
+  app.get("/api/admin/obscura/status", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const status = await obscuraService.getStatus();
+      res.json(status);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // POST /api/admin/obscura/test
+  app.post("/api/admin/obscura/test", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { url } = req.body;
+      if (!url) {
+        return res.status(400).json({ error: "URL is required" });
+      }
+      const result = await obscuraService.scrapePage(url);
+      res.json({
+        success: true,
+        title: result.title,
+        content: result.content,
+        status: result.status,
+        durationMs: result.durationMs,
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
   });
 
   // POST /api/shopping-handoff
@@ -1461,6 +1567,7 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
       if (err.name === "ZodError") {
         return res.status(400).json({ error: "Validation failed", details: err.errors });
       }
+      console.error("POST /api/optimizations error:", err);
       next(err);
     }
   });

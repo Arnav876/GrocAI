@@ -1,59 +1,82 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Search, MapPin, Shuffle, Heart, ShoppingBag, User } from "lucide-react";
+import { Search, MapPin, Shuffle, Heart, ShoppingBag, Command, Sparkles, User } from "lucide-react";
 import { GroqLogo } from "./GroqLogo.js";
 import { useBasket } from "../../context/BasketContext.js";
 import { formatINR } from "@groqai/shared";
 
 interface HeaderProps {
   onOpenPincodeModal: () => void;
+  onOpenSearch?: (query?: string) => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onOpenPincodeModal }) => {
+export const Header: React.FC<HeaderProps> = ({ onOpenPincodeModal, onOpenSearch }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const navigate = useNavigate();
   const { itemCount, estimatedTotalRupees, pincode } = useBasket();
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (searchQuery.trim()) {
+    if (onOpenSearch) {
+      onOpenSearch(searchQuery.trim());
+    } else if (searchQuery.trim()) {
       navigate(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
     }
   };
 
+  const handleBarClick = () => {
+    if (onOpenSearch) {
+      onOpenSearch(searchQuery);
+    } else {
+      window.dispatchEvent(
+        new CustomEvent("open-browser-omnibar", { detail: { query: searchQuery } })
+      );
+    }
+  };
+
   return (
-    <header className="py-4 bg-white border-b border-brand-border sticky top-0 lg:static z-40">
-      <div className="max-w-container mx-auto px-4 flex items-center justify-between gap-4">
+    <header className="py-3 sm:py-4 bg-white border-b border-brand-border sticky top-0 lg:static z-40">
+      <div className="max-w-container mx-auto px-4 flex items-center justify-between gap-2 sm:gap-4">
         {/* Logo */}
         <GroqLogo />
 
-        {/* Wide Search Bar */}
-        <form
-          onSubmit={handleSearchSubmit}
-          className="hidden md:flex flex-1 max-w-2xl items-center relative"
+        {/* Browser-Like Omnibar Search Trigger (Visible on all devices/Safari) */}
+        <div
+          onClick={handleBarClick}
+          className="flex-1 max-w-xl cursor-pointer"
         >
-          <div className="flex w-full items-center border-2 border-brand-green/30 focus-within:border-brand-green rounded-full pl-4 pr-1 py-1 transition-all shadow-sm">
-            <Search className="w-4 h-4 text-brand-grey mr-2" />
+          <div className="flex w-full items-center border-2 border-brand-green/30 hover:border-brand-green focus-within:border-brand-green rounded-full pl-3 sm:pl-4 pr-1.5 py-1 transition-all shadow-sm bg-gray-50/50 hover:bg-white">
+            <Search className="w-4 h-4 text-brand-grey mr-2 shrink-0" />
             <input
               type="text"
+              readOnly
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search for milk, eggs, rice, butter, oil..."
-              className="w-full text-sm font-medium focus:outline-none bg-transparent placeholder:text-gray-400"
+              placeholder="Search grocery products across all platforms..."
+              className="w-full text-xs sm:text-sm font-medium focus:outline-none bg-transparent placeholder:text-gray-400 cursor-pointer"
             />
+            <div className="hidden sm:flex items-center gap-1 mr-2 px-2 py-0.5 rounded-md bg-gray-100 text-gray-500 text-[11px] font-mono font-medium border border-gray-200">
+              <Command className="w-3 h-3" />
+              <span>K</span>
+            </div>
             <button
-              type="submit"
-              className="bg-brand-green hover:bg-brand-green-hover text-white text-sm font-semibold px-6 py-2 rounded-full transition-colors flex items-center gap-1.5 shadow-sm"
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleBarClick();
+              }}
+              className="bg-brand-green hover:bg-brand-green-hover text-white text-xs sm:text-sm font-semibold px-3 sm:px-5 py-1.5 rounded-full transition-colors flex items-center gap-1 shadow-sm shrink-0"
             >
-              Search
+              <Sparkles className="w-3.5 h-3.5 hidden sm:inline" />
+              <span>Search</span>
             </button>
           </div>
-        </form>
+        </div>
 
         {/* Action Controls & Badges */}
         <div className="flex items-center gap-3 lg:gap-6">
           {/* Check My Pincode Button */}
           <button
+            type="button"
             onClick={onOpenPincodeModal}
             className="flex items-center gap-1.5 border border-brand-green text-brand-green hover:bg-brand-green-light px-3.5 py-1.5 rounded-full text-xs lg:text-sm font-semibold transition-all shadow-sm"
           >

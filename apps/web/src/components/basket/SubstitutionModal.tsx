@@ -33,6 +33,7 @@ export const SubstitutionModal: React.FC<SubstitutionModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
       <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-brand-border relative animate-in fade-in zoom-in-95 duration-150">
         <button
+          type="button"
           onClick={onClose}
           className="absolute top-4 right-4 p-1.5 rounded-full text-brand-grey hover:bg-gray-100 transition-colors"
         >
@@ -97,12 +98,14 @@ export const SubstitutionModal: React.FC<SubstitutionModalProps> = ({
 
         <div className="flex items-center justify-end gap-3">
           <button
+            type="button"
             onClick={onClose}
             className="px-4 py-2.5 rounded-full border border-gray-300 text-xs font-bold text-gray-700 hover:bg-gray-50 transition-colors"
           >
             Keep Original
           </button>
           <button
+            type="button"
             onClick={() => {
               onConfirmSwap();
               onClose();

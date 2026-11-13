@@ -230,7 +230,7 @@ describe("Phase 6: Frontend Quality Gate, 3-Strategy Optimization & Handoff Engi
         </BasketProvider>
       );
 
-      const input = screen.getByPlaceholderText(/e\.g\. 110001/);
+      const input = screen.getByPlaceholderText(/e\.g\.\s*(?:110001|560064)/);
       const applyBtn = screen.getByRole("button", { name: /Apply/i });
 
       // Enter invalid pincode starting with 0
@@ -250,7 +250,7 @@ describe("Phase 6: Frontend Quality Gate, 3-Strategy Optimization & Handoff Engi
         </BasketProvider>
       );
 
-      const input = screen.getByPlaceholderText(/e\.g\. 110001/);
+      const input = screen.getByPlaceholderText(/e\.g\.\s*(?:110001|560064)/);
       const applyBtn = screen.getByRole("button", { name: /Apply/i });
 
       fireEvent.change(input, { target: { value: "560001" } });
@@ -327,7 +327,7 @@ describe("Phase 6: Frontend Quality Gate, 3-Strategy Optimization & Handoff Engi
       const priceInput = screen.getByPlaceholderText(/e\.g\. 54/);
       fireEvent.change(priceInput, { target: { value: "54" } });
 
-      const pincodeInput = screen.getByPlaceholderText("110001");
+      const pincodeInput = screen.getByPlaceholderText(/(?:110001|560064)/);
       fireEvent.change(pincodeInput, { target: { value: "012345" } }); // starts with 0
 
       const submitBtn = screen.getByRole("button", { name: /Record Price/i });

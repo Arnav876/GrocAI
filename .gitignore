@@ -30,6 +30,9 @@ coverage/
 .cache/
 .browser-profiles/
 .playwright-mcp/
+tools/obscura/
+*.mp4
+*.tar.gz
 
 # IDE
 .idea/

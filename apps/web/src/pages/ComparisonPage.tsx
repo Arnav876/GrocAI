@@ -88,7 +88,7 @@ export const ComparisonPage: React.FC = () => {
     };
   }, [id]);
 
-  if (loading) {
+  if (loading && !product) {
     return (
       <div className="max-w-container mx-auto px-4 py-16 text-center text-sm text-gray-400">
         Loading 4-platform matrix...
@@ -170,6 +170,7 @@ export const ComparisonPage: React.FC = () => {
             </span>
           </div>
           <button
+            type="button"
             onClick={() => addProduct(product)}
             className="bg-brand-green hover:bg-brand-green-hover text-white text-xs font-bold px-5 py-3 rounded-full flex items-center gap-2 shadow-sm transition-colors"
           >
@@ -193,6 +194,7 @@ export const ComparisonPage: React.FC = () => {
             <span>{refreshMessage.text}</span>
           </div>
           <button
+            type="button"
             onClick={() => setRefreshMessage(null)}
             className="font-bold text-gray-500 hover:text-gray-900 ml-4"
           >
@@ -224,6 +226,7 @@ export const ComparisonPage: React.FC = () => {
           </div>
           <div className="flex items-center gap-3 text-xs font-medium">
             <button
+              type="button"
               onClick={handleRefresh}
               disabled={refreshing}
               className="inline-flex items-center gap-1.5 text-xs font-bold text-white bg-brand-green hover:bg-brand-green-hover disabled:opacity-50 px-3.5 py-1.5 rounded-full transition-all shadow-xs"

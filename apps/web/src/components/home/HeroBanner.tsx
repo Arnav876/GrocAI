@@ -113,7 +113,7 @@ export const HeroBanner: React.FC = () => {
                   maxLength={6}
                   value={heroPin}
                   onChange={(e) => setHeroPin(e.target.value.replace(/\D/g, ""))}
-                  placeholder="Enter 6-digit Pincode (e.g. 110001)"
+                  placeholder="Enter 6-digit Pincode (e.g. 560064)"
                   className="w-full text-sm font-bold text-brand-navy focus:outline-none bg-transparent placeholder:text-gray-400"
                 />
                 <button
@@ -173,6 +173,7 @@ export const HeroBanner: React.FC = () => {
           {slides.map((_, idx) => (
             <button
               key={idx}
+              type="button"
               onClick={() => setCurrentSlide(idx)}
               className={`h-2.5 rounded-full transition-all ${
                 currentSlide === idx ? "w-8 bg-brand-green" : "w-2.5 bg-gray-300 hover:bg-gray-400"

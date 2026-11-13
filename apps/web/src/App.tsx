@@ -8,6 +8,7 @@ import { Header } from "./components/common/Header.js";
 import { Navbar } from "./components/common/Navbar.js";
 import { Footer } from "./components/common/Footer.js";
 import { PincodeModal } from "./components/common/PincodeModal.js";
+import { BrowserOmnibar } from "./components/common/BrowserOmnibar.js";
 import { HomePage } from "./pages/HomePage.js";
 import { SearchPage } from "./pages/SearchPage.js";
 import { ComparisonPage } from "./pages/ComparisonPage.js";
@@ -21,6 +22,17 @@ const queryClient = new QueryClient();
 
 export const App: React.FC = () => {
   const [pincodeModalOpen, setPincodeModalOpen] = useState(false);
+  const [omnibarOpen, setOmnibarOpen] = useState(false);
+  const [omnibarQuery, setOmnibarQuery] = useState("");
+
+  React.useEffect(() => {
+    const handleOpen = (e: any) => {
+      setOmnibarQuery(e.detail?.query || "");
+      setOmnibarOpen(true);
+    };
+    window.addEventListener("open-browser-omnibar", handleOpen);
+    return () => window.removeEventListener("open-browser-omnibar", handleOpen);
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -34,7 +46,13 @@ export const App: React.FC = () => {
             <TopBar />
 
             {/* Main Header with Search and Cart Count */}
-            <Header onOpenPincodeModal={() => setPincodeModalOpen(true)} />
+            <Header
+              onOpenPincodeModal={() => setPincodeModalOpen(true)}
+              onOpenSearch={(q) => {
+                setOmnibarQuery(q || "");
+                setOmnibarOpen(true);
+              }}
+            />
 
             {/* Sticky Navigation Bar */}
             <Navbar />
@@ -63,6 +81,13 @@ export const App: React.FC = () => {
             <PincodeModal
               isOpen={pincodeModalOpen}
               onClose={() => setPincodeModalOpen(false)}
+            />
+
+            {/* Omnibar Browser Search Modal */}
+            <BrowserOmnibar
+              isOpen={omnibarOpen}
+              onClose={() => setOmnibarOpen(false)}
+              initialQuery={omnibarQuery}
             />
           </div>
         </BrowserRouter>

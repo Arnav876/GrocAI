@@ -21,7 +21,10 @@ import { buildPlatformSearchDeepLink } from "./shoppingHandoffService.js";
 export interface BasketItemRequest {
   canonicalProductId?: string;
   queryName: string;
+  query?: string;
+  name?: string;
   quantity: number;
+  unit?: string;
   allowSubstitutions?: boolean;
   preferredBrand?: string;
 }
@@ -49,8 +52,11 @@ export interface PlatformObservationInput {
 }
 
 export interface BasketOptimizationRequest {
-  items: BasketItemRequest[];
-  pincode: string;
+  items?: BasketItemRequest[];
+  basketItems?: BasketItemRequest[];
+  pincode?: string;
+  locationKey?: string;
+  locationId?: string;
   enabledPlatforms?: PlatformId[];
   observationsOverride?: PlatformObservationInput[];
 }
@@ -190,12 +196,28 @@ export class OptimizationService {
    * 100% integer paise arithmetic, zero AI, unknown fee ranges preserved.
    */
   async optimizeBasket(request: BasketOptimizationRequest): Promise<BasketOptimizationResult> {
-    const { items, pincode, enabledPlatforms = SUPPORTED_PLATFORMS, observationsOverride } = request;
+    const rawItems = request.items || request.basketItems || [];
+    const rawPincode =
+      request.pincode ||
+      (request.locationKey ? request.locationKey.split("_")[1] : undefined) ||
+      (request.locationId ? request.locationId.split("_")[1] : undefined) ||
+      "560064";
+
+    const pincode = rawPincode;
+    const { enabledPlatforms = SUPPORTED_PLATFORMS, observationsOverride } = request;
 
     // Invariant 1: Validate Pincode
     if (!PINCODE_REGEX.test(pincode)) {
       throw new Error(`Invalid pincode: ${pincode}. Must be a valid 6-digit Indian postal code.`);
     }
+
+    const items: BasketItemRequest[] = rawItems.map((it: any) => ({
+      canonicalProductId: it.canonicalProductId || it.productId,
+      queryName: it.queryName || it.name || it.query || "Item",
+      quantity: it.quantity,
+      allowSubstitutions: it.allowSubstitutions,
+      preferredBrand: it.preferredBrand || it.brand,
+    }));
 
     // Invariant 2: Validate item quantities & integer paise invariants
     for (const it of items) {
@@ -282,6 +304,12 @@ export class OptimizationService {
       dbObservations = await this.prisma.platformObservation.findMany({
         where: { pincode },
       });
+      // Fallback gracefully to regional/seeded observations (560064 / 560001 / 110001) if pincode lacks local observations
+      if (dbObservations.length === 0) {
+        dbObservations = await this.prisma.platformObservation.findMany({
+          where: { pincode: { in: ["560064", "560001", "110001"] } },
+        });
+      }
     }
 
     const resolved: ResolvedItem[] = [];
@@ -296,6 +324,9 @@ export class OptimizationService {
           match = this.findBestMatchInList(item, platform, observationsOverride);
         } else if (dbObservations.length > 0) {
           match = this.findBestMatchInList(item, platform, dbObservations);
+          if (!match) {
+            match = this.findBestMatchInSeed(item, platform);
+          }
         } else {
           // Fallback to seeded canonical products
           match = this.findBestMatchInSeed(item, platform);
@@ -320,8 +351,9 @@ export class OptimizationService {
     platform: PlatformId,
     list: any[]
   ): ItemPlatformMatch | null {
-    const qLower = item.queryName.toLowerCase().trim();
+    const qRaw = (item.queryName || item.query || item.name || "").toLowerCase().trim();
     const brandLower = item.preferredBrand?.toLowerCase().trim();
+    const qTokens = qRaw.split(/[\s,\-_/]+/).filter((t) => t.length > 1);
 
     const candidates = list.filter((obs) => {
       const obsPlat = (obs.platformId || obs.platform) as PlatformId;
@@ -341,17 +373,27 @@ export class OptimizationService {
         (!obs.availabilityStatus && !obs.availability && obs.pricePaise > 0);
       if (!isAvailable) return false;
 
-      // Match criteria
-      if (
-        item.canonicalProductId &&
-        (obs.canonicalProductId === item.canonicalProductId || obs.id === item.canonicalProductId)
-      ) {
+      // Match criteria 1: Canonical Product ID match
+      if (item.canonicalProductId && obs.canonicalProductId) {
+        return obs.canonicalProductId === item.canonicalProductId || obs.id === item.canonicalProductId;
+      }
+      if (item.canonicalProductId && obs.id === item.canonicalProductId) {
         return true;
       }
 
+      // Match criteria 2: Substring inclusion
       const obsTitle = (obs.name || obs.rawTitle || obs.title || "").toLowerCase();
-      if (obsTitle.includes(qLower) || qLower.includes(obsTitle)) {
+      if (obsTitle.includes(qRaw) || qRaw.includes(obsTitle)) {
         return true;
+      }
+
+      // Match criteria 3: Token matching / staple dictionary overlap
+      if (qTokens.length > 0) {
+        const obsTokens = obsTitle.split(/[\s,\-_/]+/).filter((t: string) => t.length > 1);
+        const overlap = qTokens.filter((qt: string) => obsTokens.some((ot: string) => ot === qt || ot.includes(qt) || qt.includes(ot)));
+        if (overlap.length >= Math.min(2, qTokens.length) || (qTokens.length === 1 && overlap.length === 1)) {
+          return true;
+        }
       }
 
       return false;
@@ -394,13 +436,25 @@ export class OptimizationService {
     item: BasketItemRequest,
     platform: PlatformId
   ): ItemPlatformMatch | null {
-    const qLower = item.queryName.toLowerCase().trim();
+    const rawQuery = (item.queryName || item.query || item.name || "").toLowerCase().trim();
+    const qLower = rawQuery;
+    const queryTokens = qLower.split(/[\s,\-_/]+/).filter((t) => t.length > 2);
+
     for (const prod of SEED_CANONICAL_PRODUCTS) {
       const matchesId = item.canonicalProductId === prod.id || item.canonicalProductId === prod.slug;
-      const matchesName = prod.name.toLowerCase().includes(qLower) || qLower.includes(prod.name.toLowerCase());
+      if (item.canonicalProductId && !matchesId) {
+        continue;
+      }
+
+      const prodNameLower = prod.name.toLowerCase();
+      const matchesName = prodNameLower.includes(qLower) || qLower.includes(prodNameLower);
       const matchesAlias = prod.aliases.some((a) => a.toLowerCase().includes(qLower) || qLower.includes(a.toLowerCase()));
 
-      if (matchesId || matchesName || matchesAlias) {
+      // Token overlap match
+      const prodTokens = `${prodNameLower} ${prod.slug} ${prod.category} ${prod.aliases.join(" ")}`.toLowerCase();
+      const hasTokenMatch = queryTokens.length > 0 && queryTokens.some((tok) => prodTokens.includes(tok));
+
+      if (matchesId || matchesName || matchesAlias || hasTokenMatch) {
         const pInfo = prod.prices[platform];
         if (pInfo && pInfo.inStock && pInfo.pricePaise > 0) {
           assertIntegerPaise(pInfo.pricePaise, `${prod.name} on ${platform}`);
@@ -663,7 +717,7 @@ export class OptimizationService {
       if (a.estimatedTotalMaxPaise !== b.estimatedTotalMaxPaise) {
         return a.estimatedTotalMaxPaise - b.estimatedTotalMaxPaise;
       }
-      return a.platforms[0].localeCompare(b.platforms[0]);
+      return (a.platforms[0] || "").localeCompare(b.platforms[0] || "");
     });
 
     return {
@@ -733,7 +787,7 @@ export class OptimizationService {
       if (a.summary.activeStoreCount !== b.summary.activeStoreCount) {
         return a.summary.activeStoreCount - b.summary.activeStoreCount;
       }
-      return a.summary.subsetName.localeCompare(b.summary.subsetName);
+      return (a.summary.subsetName || "").localeCompare(b.summary.subsetName || "");
     });
 
     // Assign rank 1..15

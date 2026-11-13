@@ -1,8 +1,13 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { GroceryListItemInput, ProductSummary, UserPreferences } from "@groqai/shared";
+import { soundEffects } from "../services/soundEffects.js";
 
 export interface BasketItem extends GroceryListItemInput {
   productId?: string;
+  canonicalProductId?: string;
+  name?: string;
+  queryName?: string;
+  brand?: string;
   matchedProduct?: ProductSummary;
 }
 
@@ -28,14 +33,46 @@ const BasketContext = createContext<BasketContextType | undefined>(undefined);
 export const BasketProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [items, setItems] = useState<BasketItem[]>([
     // Sensible pre-populated starting basket for instant exploration
-    { query: "Amul Taaza Toned Fresh Milk", quantity: 2, unit: "L", allowSubstitutions: false },
-    { query: "Fresh Hybrid Red Onions", quantity: 1, unit: "kg", allowSubstitutions: false },
-    { query: "Farm Fresh Table White Eggs (6 pcs)", quantity: 2, unit: "pcs", allowSubstitutions: false },
-    { query: "Fortune Sunlite Refined Sunflower Oil (1 Litre)", quantity: 1, unit: "L", allowSubstitutions: false },
+    {
+      query: "Amul Taaza Toned Fresh Milk",
+      queryName: "Amul Taaza Toned Fresh Milk",
+      name: "Amul Taaza Toned Fresh Milk",
+      canonicalProductId: "prod_milk_amul_taaza_500ml",
+      quantity: 2,
+      unit: "L",
+      allowSubstitutions: false,
+    },
+    {
+      query: "Fresh Hybrid Red Onions",
+      queryName: "Fresh Hybrid Red Onions",
+      name: "Fresh Hybrid Red Onions",
+      canonicalProductId: "prod_onion_red_1kg",
+      quantity: 1,
+      unit: "kg",
+      allowSubstitutions: false,
+    },
+    {
+      query: "Farm Fresh Table White Eggs (6 pcs)",
+      queryName: "Farm Fresh Table White Eggs (6 pcs)",
+      name: "Farm Fresh Table White Eggs (6 pcs)",
+      canonicalProductId: "prod_eggs_table_white_6pcs",
+      quantity: 2,
+      unit: "pcs",
+      allowSubstitutions: false,
+    },
+    {
+      query: "Fortune Sunlite Refined Sunflower Oil (1 Litre)",
+      queryName: "Fortune Sunlite Refined Sunflower Oil (1 Litre)",
+      name: "Fortune Sunlite Refined Sunflower Oil (1 Litre)",
+      canonicalProductId: "prod_oil_fortune_sunlite_1l",
+      quantity: 1,
+      unit: "L",
+      allowSubstitutions: false,
+    },
   ]);
 
-  const [pincode, setPincode] = useState<string>("110001");
-  const [locationName, setLocationName] = useState<string>("Connaught Place, New Delhi");
+  const [pincode, setPincode] = useState<string>("560064");
+  const [locationName, setLocationName] = useState<string>("Bengaluru (Yelahanka / Avalahalli) — 560064");
   const [preferences, setPreferences] = useState<UserPreferences>({
     strategy: "optimized_multi_platform",
     maxPlatforms: 3,
@@ -45,6 +82,7 @@ export const BasketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   });
 
   const addItem = (newItem: BasketItem) => {
+    soundEffects.playAddToCartSound();
     setItems((prev) => {
       const existingIdx = prev.findIndex(
         (it) => it.query.toLowerCase() === newItem.query.toLowerCase()
@@ -61,15 +99,20 @@ export const BasketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const addProduct = (product: ProductSummary, quantity: number = 1) => {
     addItem({
       query: product.name,
-      quantity,
+      queryName: product.name,
+      name: product.name,
+      quantity: Math.max(1, Math.round(quantity)),
       unit: product.packSize,
       productId: product.id,
+      canonicalProductId: product.id,
+      brand: product.brand,
       matchedProduct: product,
       allowSubstitutions: false,
     });
   };
 
   const updateQuantity = (index: number, quantity: number) => {
+    soundEffects.playAddToCartSound();
     setItems((prev) => {
       if (quantity <= 0) {
         return prev.filter((_, idx) => idx !== index);
@@ -81,6 +124,7 @@ export const BasketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const removeItem = (index: number) => {
+    soundEffects.playTaskCompleteSound();
     setItems((prev) => prev.filter((_, idx) => idx !== index));
   };
 

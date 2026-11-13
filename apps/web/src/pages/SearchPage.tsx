@@ -78,7 +78,15 @@ export const SearchPage: React.FC = () => {
     setRefreshNotice({ text: `Queued live refresh for ${queries.length} search${queries.length > 1 ? "es" : ""}...` });
 
     try {
-      const enqueued = await apiClient.enqueueRefresh(queries, ["blinkit", "zepto", "bigbasket"], `delhi_${pincode}`);
+      const locationKey =
+        pincode === "560064"
+          ? "bengaluru_560064"
+          : pincode === "560001"
+          ? "bengaluru_560001"
+          : pincode === "110001"
+          ? "delhi_110001"
+          : `hub_${pincode}`;
+      const enqueued = await apiClient.enqueueRefresh(queries, ["blinkit", "zepto", "bigbasket"], locationKey);
       const outcome = await apiClient.waitForIngestionJobs(enqueued.jobIds);
 
       setProducts(await apiClient.searchProducts(searchTerm, selectedCategory, false, pincode));
@@ -187,6 +195,7 @@ export const SearchPage: React.FC = () => {
               </h3>
               {(selectedCategory || selectedPlatform !== "all" || inStockOnly) && (
                 <button
+                  type="button"
                   onClick={() => {
                     setSelectedCategory("");
                     setSelectedPlatform("all");
@@ -205,6 +214,7 @@ export const SearchPage: React.FC = () => {
               <label className="block text-xs font-bold text-brand-navy mb-2.5">Category</label>
               <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
                 <button
+                  type="button"
                   onClick={() => {
                     setSelectedCategory("");
                     setSearchParams(searchTerm ? { q: searchTerm } : {});
@@ -219,6 +229,7 @@ export const SearchPage: React.FC = () => {
                 {MOCK_CATEGORIES.map((cat) => (
                   <button
                     key={cat.id}
+                    type="button"
                     onClick={() => {
                       setSelectedCategory(cat.id);
                       setSearchParams({
@@ -244,6 +255,7 @@ export const SearchPage: React.FC = () => {
               <label className="block text-xs font-bold text-brand-navy mb-2">Available On</label>
               <div className="space-y-1.5">
                 <button
+                  type="button"
                   onClick={() => setSelectedPlatform("all")}
                   className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                     selectedPlatform === "all"
@@ -256,6 +268,7 @@ export const SearchPage: React.FC = () => {
                 {SUPPORTED_PLATFORMS.map((pid) => (
                   <button
                     key={pid}
+                    type="button"
                     onClick={() => setSelectedPlatform(pid)}
                     className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-2 ${
                       selectedPlatform === pid
@@ -295,7 +308,7 @@ export const SearchPage: React.FC = () => {
             </div>
           </div>
 
-          {loading ? (
+          {loading && products.length === 0 ? (
             <div className="p-12 text-center text-sm text-gray-400">Searching products across catalogs...</div>
           ) : filteredProducts.length === 0 ? (
             <div className="bg-white rounded-2xl border border-brand-border p-12 text-center space-y-3">
@@ -305,6 +318,7 @@ export const SearchPage: React.FC = () => {
                 We couldn't find items matching your search. Try searching for everyday staples like milk, atta, eggs, or oil.
               </p>
               <button
+                type="button"
                 onClick={() => {
                   setSearchTerm("");
                   setSelectedCategory("");
@@ -318,7 +332,7 @@ export const SearchPage: React.FC = () => {
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-3 gap-5">
+            <div className={`grid grid-cols-2 md:grid-cols-3 xl:grid-cols-3 gap-5 transition-opacity ${loading ? "opacity-60" : "opacity-100"}`}>
               {filteredProducts.map((product) => (
                 <ProductCard key={product.id} product={product} />
               ))}

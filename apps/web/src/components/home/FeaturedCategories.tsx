@@ -41,6 +41,7 @@ export const FeaturedCategories: React.FC = () => {
         {/* Carousel Arrow Buttons */}
         <div className="flex items-center gap-2 self-end sm:self-auto">
           <button
+            type="button"
             onClick={() => scroll("left")}
             className="w-8 h-8 rounded-full border border-gray-200 bg-white hover:bg-brand-green hover:text-white hover:border-brand-green transition-colors flex items-center justify-center text-brand-navy shadow-xs"
             aria-label="Previous categories"
@@ -48,6 +49,7 @@ export const FeaturedCategories: React.FC = () => {
             <ChevronLeft className="w-4 h-4" />
           </button>
           <button
+            type="button"
             onClick={() => scroll("right")}
             className="w-8 h-8 rounded-full border border-gray-200 bg-white hover:bg-brand-green hover:text-white hover:border-brand-green transition-colors flex items-center justify-center text-brand-navy shadow-xs"
             aria-label="Next categories"

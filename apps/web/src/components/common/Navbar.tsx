@@ -30,6 +30,7 @@ export const Navbar: React.FC = () => {
         {/* Left: Browse All Categories button */}
         <div className="relative py-2.5">
           <button
+            type="button"
             onClick={() => setCategoriesDropdownOpen(!categoriesDropdownOpen)}
             className="bg-brand-green hover:bg-brand-green-hover text-white text-xs lg:text-sm font-bold px-4 py-2 rounded-lg flex items-center gap-2 transition-all shadow-sm"
           >
@@ -109,6 +110,7 @@ export const Navbar: React.FC = () => {
         {/* Mobile Hamburger Button */}
         <div className="lg:hidden py-2.5">
           <button
+            type="button"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             className="p-2 rounded-lg text-brand-navy hover:bg-gray-100"
             aria-label="Toggle menu"

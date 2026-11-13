@@ -115,7 +115,7 @@ export class MockApiService {
         latencyMs: pid === "blinkit" ? 120 : pid === "zepto" ? 95 : pid === "instamart" ? 140 : 180,
         errorRate: 0.0,
         notes: [
-          `Running in mock mode for Central Delhi (110001)`,
+          `Running in mock mode for Bengaluru Yelahanka (560064)`,
           `Automated cart transfer is explicitly unsupported (NullCartAdapter)`,
           `Ingestion mode: ${ingestionMode}`,
         ],
@@ -123,7 +123,7 @@ export class MockApiService {
     });
   }
 
-  async getDataProvenance(pincode: string = "110001"): Promise<DataProvenance> {
+  async getDataProvenance(pincode: string = "560064"): Promise<DataProvenance> {
     const locationKey = `delhi_${pincode}`;
     const rows: ProvenanceListingRow[] = [];
 
@@ -648,7 +648,7 @@ export class MockApiService {
   }
 
   async optimizeBasket(request: BasketOptimizationRequest): Promise<BasketOptimizationResult> {
-    const pincode = request.pincode || "110001";
+    const pincode = request.pincode || "560064";
     const requestedItems = request.items.map((item) => {
       const q = (item.queryName || (item as any).query || "").toLowerCase().trim();
       const matchedProd =
@@ -1001,7 +1001,7 @@ export class MockApiService {
     const storeCarts = payload.storeCarts || {};
     const strategy = payload.strategy || "OPTIMIZED_MULTI_PLATFORM_SPLIT";
     const strategyName = payload.strategyName || "Optimized Multi-Platform Split";
-    const pincode = payload.pincode || "110001";
+    const pincode = payload.pincode || "560064";
 
     let grandSubtotalPaise = 0;
     let grandFeeMinPaise = 0;
