@@ -327,6 +327,34 @@ export const openapiSpecification = {
         },
       },
     },
+    "/api/observations/import-payload": {
+      post: {
+        summary: "Import Raw Network HAR or JSON Response Payload",
+        description:
+          "Accepts a raw JSON response or DevTools HAR export from Blinkit, Zepto, BigBasket, or Swiggy Instamart. Normalizes observations, validates integer paise, matches to catalog products, and records price observations.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/ImportPayloadRequest" },
+            },
+          },
+        },
+        responses: {
+          "201": {
+            description: "Payload normalized, matched, and observations recorded",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ImportPayloadResponse" },
+              },
+            },
+          },
+          "400": {
+            description: "Invalid platformId, invalid pincode, or missing rawPayload",
+          },
+        },
+      },
+    },
     "/api/nl/parse": {
       post: {
         summary: "Natural Language Grocery List Parser & Optional Optimization Chaining",
@@ -570,6 +598,29 @@ export const openapiSpecification = {
         properties: {
           message: { type: "string" },
           observation: { $ref: "#/components/schemas/NormalizedObservation" },
+        },
+      },
+      ImportPayloadRequest: {
+        type: "object",
+        required: ["platformId", "pincode", "rawPayload"],
+        properties: {
+          platformId: { type: "string", enum: ["blinkit", "zepto", "instamart", "bigbasket"] },
+          pincode: { type: "string", pattern: "^[1-9][0-9]{5}$", example: "560064" },
+          rawPayload: { type: "object", description: "Direct response JSON or DevTools HAR log" },
+        },
+      },
+      ImportPayloadResponse: {
+        type: "object",
+        properties: {
+          status: { type: "string", example: "success" },
+          platformId: { type: "string", enum: ["blinkit", "zepto", "instamart", "bigbasket"] },
+          pincode: { type: "string", example: "560064" },
+          locationKey: { type: "string", example: "bengaluru_560064" },
+          importedCount: { type: "integer", example: 10 },
+          observations: {
+            type: "array",
+            items: { $ref: "#/components/schemas/NormalizedObservation" },
+          },
         },
       },
       NormalizedObservation: {

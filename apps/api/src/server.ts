@@ -36,7 +36,13 @@ import {
 import { SEED_CANONICAL_PRODUCTS } from "./fixtures/seedFixtures.js";
 import { PostgresScrapeQueue } from "./ingestion/queue.js";
 import { toObservation } from "./ingestion/normalize.js";
-import { createManualAssistedObservation } from "./ingestion/payloadNormalizers.js";
+import {
+  createManualAssistedObservation,
+  parseBlinkitSearchPayload,
+  parseZeptoSearchPayload,
+  parseBigBasketSearchPayload,
+  parseInstamartSearchPayload,
+} from "./ingestion/payloadNormalizers.js";
 import { openapiSpecification } from "./docs/openapiSpec.js";
 import { obscuraService } from "./ingestion/browser/obscuraService.js";
 
@@ -955,6 +961,218 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
       });
     } catch (err: any) {
       return res.status(400).json({ error: err.message || "Invalid manual observation payload" });
+    }
+  });
+
+  function extractPayloadFromRawInput(rawPayload: unknown, platformId: string): unknown {
+    if (rawPayload === undefined || rawPayload === null) return null;
+
+    let parsed = rawPayload;
+    if (typeof rawPayload === "string") {
+      try {
+        parsed = JSON.parse(rawPayload);
+      } catch {
+        return rawPayload;
+      }
+    }
+
+    const obj = parsed as any;
+    const entries: any[] = obj?.log?.entries || obj?.entries;
+    if (Array.isArray(entries) && entries.length > 0) {
+      const urlKeywords: Record<string, string[]> = {
+        blinkit: ["layout/search", "search", "blinkit"],
+        zepto: ["/search", "zepto", "lms"],
+        bigbasket: ["listing-svc/v2/products", "ps/?q=", "bigbasket"],
+        instamart: ["/api/instamart/search", "instamart", "swiggy"],
+      };
+      const keywords = urlKeywords[platformId] || ["search"];
+
+      let bestEntry: any = null;
+      for (const kw of keywords) {
+        bestEntry = entries.find(
+          (e: any) =>
+            typeof e?.request?.url === "string" &&
+            e.request.url.toLowerCase().includes(kw) &&
+            e?.response?.content?.text
+        );
+        if (bestEntry) break;
+      }
+
+      if (!bestEntry) {
+        bestEntry = entries.find((e: any) => Boolean(e?.response?.content?.text));
+      }
+
+      if (bestEntry?.response?.content?.text) {
+        const text = bestEntry.response.content.text;
+        try {
+          return JSON.parse(text);
+        } catch {
+          return text;
+        }
+      }
+    }
+
+    if (obj?.response?.content?.text) {
+      const text = obj.response.content.text;
+      try {
+        return JSON.parse(text);
+      } catch {
+        return text;
+      }
+    }
+
+    return obj;
+  }
+
+  // POST /api/observations/import-payload
+  app.post("/api/observations/import-payload", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { platformId, pincode, rawPayload } = req.body || {};
+
+      if (!platformId || !SUPPORTED_PLATFORMS.includes(platformId as any)) {
+        return res.status(400).json({
+          error: `Invalid platformId '${platformId}'. Must be one of: ${SUPPORTED_PLATFORMS.join(", ")}`,
+        });
+      }
+
+      if (!pincode || typeof pincode !== "string" || !PINCODE_REGEX.test(pincode)) {
+        return res.status(400).json({
+          error: `Invalid pincode '${pincode}'. Must be a valid 6-digit Indian postal code.`,
+        });
+      }
+
+      if (rawPayload === undefined || rawPayload === null) {
+        return res.status(400).json({
+          error: "rawPayload is required",
+        });
+      }
+
+      const extractedPayload = extractPayloadFromRawInput(rawPayload, platformId);
+
+      let observations: any[] = [];
+      switch (platformId) {
+        case "blinkit":
+          observations = parseBlinkitSearchPayload(extractedPayload, pincode);
+          break;
+        case "zepto":
+          observations = parseZeptoSearchPayload(extractedPayload, pincode);
+          break;
+        case "bigbasket":
+          observations = parseBigBasketSearchPayload(extractedPayload, pincode);
+          break;
+        case "instamart":
+          observations = parseInstamartSearchPayload(extractedPayload, pincode);
+          break;
+      }
+
+      const locationKey = resolveLocationKey(pincode);
+      const allProducts = await prisma.product.findMany();
+      const savedObservations = [];
+
+      for (const obs of observations) {
+        let bestProd: any = null;
+        let highestConf = -1;
+
+        for (const cand of allProducts) {
+          const m = defaultMatcher.match(
+            { query: obs.name, packSize: obs.quantity },
+            { id: cand.id, name: cand.name, brand: cand.brand, variant: cand.variant, packSize: cand.packSize }
+          );
+          if (m.isMatch && m.confidence > highestConf) {
+            highestConf = m.confidence;
+            bestProd = cand;
+          }
+        }
+
+        const confidence = highestConf >= 0.7 ? highestConf : 0.9;
+        const matchedProductId = highestConf >= 0.7 && bestProd ? bestProd.id : null;
+
+        const savedObs = await prisma.priceObservation.create({
+          data: {
+            productId: matchedProductId,
+            platform: obs.platformId,
+            locationKey,
+            rawTitle: obs.name,
+            brand: obs.brand,
+            variant: matchedProductId ? bestProd.variant : undefined,
+            packSize: obs.quantity,
+            pricePaise: obs.pricePaise,
+            originalPricePaise: obs.originalPricePaise,
+            discountPercentage: obs.discountPercentage,
+            currency: "INR",
+            availability: obs.availabilityStatus === "IN_STOCK" ? "available" : "unavailable",
+            productUrl: obs.productUrl,
+            imageUrl: obs.imageUrl,
+            pincode: obs.pincode,
+            serviceableArea: `Imported (${pincode})`,
+            normalizedUnitPricePaise: obs.normalizedUnitPricePaise,
+            sourceType: "manual",
+            verificationStatus: obs.verificationStatus.toLowerCase(),
+            confidence,
+            observedAt: new Date(obs.observedAt),
+            fetchedAt: new Date(),
+            notes: ["Imported via /api/observations/import-payload"],
+          },
+        });
+
+        if (matchedProductId && bestProd) {
+          await prisma.platformListing.upsert({
+            where: {
+              productId_platform_locationKey: {
+                productId: bestProd.id,
+                platform: obs.platformId,
+                locationKey,
+              },
+            },
+            create: {
+              productId: bestProd.id,
+              platform: obs.platformId,
+              locationKey,
+              currentPricePaise: obs.pricePaise,
+              availability: obs.availabilityStatus === "IN_STOCK" ? "available" : "unavailable",
+              isStale: false,
+              confidence,
+              sourceType: "manual",
+              lastObservedAt: new Date(obs.observedAt),
+              productUrl: obs.productUrl,
+            },
+            update: {
+              currentPricePaise: obs.pricePaise,
+              availability: obs.availabilityStatus === "IN_STOCK" ? "available" : "unavailable",
+              isStale: false,
+              confidence,
+              sourceType: "manual",
+              lastObservedAt: new Date(obs.observedAt),
+              productUrl: obs.productUrl,
+            },
+          });
+        }
+
+        savedObservations.push({
+          ...savedObs,
+          name: obs.name,
+          title: obs.name,
+          discountPercentage: obs.discountPercentage,
+          availabilityStatus: obs.availabilityStatus,
+          platformId: obs.platformId,
+          dataSource: obs.dataSource,
+          normalizedUnitPricePaise: obs.normalizedUnitPricePaise,
+          matchedProduct: matchedProductId
+            ? { id: bestProd.id, name: bestProd.name, confidence: highestConf }
+            : null,
+        });
+      }
+
+      return res.status(201).json({
+        status: "success",
+        platformId,
+        pincode,
+        locationKey,
+        importedCount: savedObservations.length,
+        observations: savedObservations,
+      });
+    } catch (err: any) {
+      return res.status(400).json({ error: err.message || "Failed to process import payload" });
     }
   });
 

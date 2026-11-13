@@ -348,3 +348,40 @@ In **Phase B**, the live ingestion architecture was implemented and verified:
    - Standard fallback hierarchy seamlessly activates on any platform challenge or timeout.
    - All 337 tests pass across monorepo with 0 errors.
 
+---
+
+## 11. Phase C Execution: Akamai Warm-Up, Instamart Hybrid & DevTools HAR/JSON Importer
+
+In **Phase C**, the remaining challenges around BigBasket Akamai bot detection and Swiggy Instamart PerimeterX challenges were resolved, and a production-grade payload ingestion pipeline was implemented:
+
+1. **BigBasket Clean TLS Warm-Up & Base64 Location Injection (`apps/api/src/ingestion/platforms/bigbasket.ts`):**
+   - **Root Cause of Cold 403:** Forging `_bb_*` cookies *before* the initial TLS handshake causes Akamai edge servers to immediately issue an `HTTP 403 Forbidden`.
+   - **Resolution:** Implemented a 2-step warm-up procedure:
+     1. Navigate cleanly to `https://www.bigbasket.com/` without pre-forged cookies, allowing Akamai telemetry (`_abck`, `bm_sz`) to initialize naturally.
+     2. Inject Base64-encoded location cookies post-warmup: `_bb_lat_long` (`base64("${lat}|${lon}")`), `_bb_addressinfo` (`base64("${lat}|${lon}|${areaName}|${pincode}|${city}")`), `_bb_pin_code`, and `_bb_vid`.
+   - **Interception & SSR Fallback:** Intercepts `/listing-svc/v2/products` JSON responses and falls back cleanly to `<script id="__NEXT_DATA__">` JSON on SSR search/PDP pages.
+   - **Session Caching:** Maintains a 20-minute warmed cookie cache per pincode to avoid repeated full TLS handshakes.
+   - **Adapter Integration:** `BigBasketAdapter` exposes `"live"` mode via `searchBigBasketLive(query, pincode)` while maintaining dynamic handling fee ranges (`₹5.00 – ₹15.00`).
+
+2. **Swiggy Instamart Hybrid Scraper & Normalizer (`apps/api/src/ingestion/platforms/instamart.ts`):**
+   - **Pathway A (Obscura CDP Interception):** Injects `userLocation` cookie on `.swiggy.com` with geocoded coordinates, navigates to `/instamart/search?custom_back=true&query=...`, and intercepts `/api/instamart/search` JSON responses.
+   - **Pathway B (SSR Initial State Extraction):** Parses SSR `window.___INITIAL_STATE___` JSON embedded within HTML.
+   - **Pathway C (Honest Graceful Degradation):** When PerimeterX challenges headless browsers in CI or restricted environments, gracefully degrades to `manual_assisted` mode (returning `[]` with zero unhandled exceptions) and preserves honest governance reporting.
+   - **Wire Price Parsing:** Handles Swiggy's dual format: protobuf-like `{ units, nanos }` (`paise = units * 100 + round(nanos / 1e7)`) and numeric rupee/paise fields.
+
+3. **DevTools HAR / JSON Payload Importer (`POST /api/observations/import-payload`):**
+   - Enables operators to copy network responses from browser DevTools or full `.har` session archives directly into GrocAI.
+   - Automatically filters HAR entries matching platform-specific URLs:
+     - Blinkit: `/v1/layout/search`
+     - Zepto: `/api/v1/search`, `/v2/search`, or `/search`
+     - BigBasket: `/listing-svc/v2/products` or `ps/?q=`
+     - Instamart: `/api/instamart/search`
+   - Validates all 14 observation dimensions, enforces `assertIntegerPaise`, matches catalog products with `defaultMatcher`, persists into `PriceObservation`, and updates `PlatformListing`.
+   - Documented in OpenAPI 3.0 specification (`/api/observations/import-payload`).
+
+4. **Quality Gate Verification:**
+   - 357 passing tests across 47 test files (100% green).
+   - Zero TypeScript errors (`tsc --noEmit` clean across `@groqai/shared`, `@groqai/web`, `@groqai/api`).
+   - Clean production builds (`npm run build` succeeds).
+
+

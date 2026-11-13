@@ -1,15 +1,25 @@
 import { PlatformId } from "@groqai/shared";
 import { PlatformScraper } from "../types.js";
 import { blinkitScraper, searchBlinkitLive } from "./blinkit.js";
-import { bigBasketScraper } from "./bigbasket.js";
+import { bigBasketScraper, searchBigBasketLive } from "./bigbasket.js";
 import { zeptoScraper, searchZeptoLive } from "./zepto.js";
-import { instamartScraper } from "./instamart.js";
+import { instamartScraper, searchInstamartLive } from "./instamart.js";
 
-export { blinkitScraper, searchBlinkitLive, bigBasketScraper, zeptoScraper, searchZeptoLive, instamartScraper };
+export {
+  blinkitScraper,
+  searchBlinkitLive,
+  bigBasketScraper,
+  searchBigBasketLive,
+  zeptoScraper,
+  searchZeptoLive,
+  instamartScraper,
+  searchInstamartLive,
+};
 export {
   parseBlinkitSearchPayload,
   parseZeptoSearchPayload,
   parseBigBasketSearchPayload,
+  parseInstamartSearchPayload,
   createManualAssistedObservation,
   type ManualObservationInput,
 } from "../payloadNormalizers.js";
