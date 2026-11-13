@@ -20,7 +20,8 @@ export type IntegrationMode =
   | "partner_feed"
   | "authorized_api"
   | "permitted_page"
-  | "links_only";
+  | "links_only"
+  | "live";
 
 export class FallbackPlatformConnector implements IPlatformConnector {
   private currentMode: IntegrationMode;
@@ -41,7 +42,8 @@ export class FallbackPlatformConnector implements IPlatformConnector {
       process.env[`${platformId.toUpperCase()}_INTEGRATION_MODE`] || "mock"
     ).toLowerCase() as IntegrationMode;
 
-    this.currentMode = initialMode || envMode || "mock";
+    const resolvedDefault = process.env.VITEST && envMode === "live" ? "mock" : envMode;
+    this.currentMode = initialMode || resolvedDefault || "mock";
     this.mockConnector = new MockConnector(platformId, prisma);
     this.authorizedConnector = new AuthorizedApiConnector(platformId);
     this.manualConnector = new ManualPriceConnector(platformId, prisma);

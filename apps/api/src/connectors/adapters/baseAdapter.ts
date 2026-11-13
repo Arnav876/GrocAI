@@ -46,6 +46,7 @@ export interface IGroceryPlatformAdapter extends IPlatformConnector {
 export abstract class BaseGroceryPlatformAdapter implements IGroceryPlatformAdapter {
   protected lastSuccessfulFetchTime: string | null = null;
   protected connector: FallbackPlatformConnector;
+  protected faultConfig: FaultInjectionConfig = {};
 
   constructor(
     public readonly platformId: PlatformId,
@@ -70,7 +71,20 @@ export abstract class BaseGroceryPlatformAdapter implements IGroceryPlatformAdap
   }
 
   setFaultInjection(config: FaultInjectionConfig): void {
+    this.faultConfig = { ...config };
     this.connector.setFaultInjection(config);
+  }
+
+  protected async applyFaults(): Promise<void> {
+    if (this.faultConfig.forcedLatencyMs) {
+      await new Promise((resolve) => setTimeout(resolve, this.faultConfig.forcedLatencyMs));
+    }
+    if (this.faultConfig.simulateTimeout) {
+      throw new Error(`Connector timeout for ${this.platformId} after 5000ms`);
+    }
+    if (this.faultConfig.simulateUnavailable) {
+      throw new Error(`Platform ${this.platformId} service temporarily unavailable (503)`);
+    }
   }
 
   getLastSuccessfulFetch(): string | null {
