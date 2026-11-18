@@ -1,3 +1,5 @@
+import "dotenv/config";
+
 import { PrismaClient } from "@prisma/client";
 import { PlatformId, LocationContext } from "@groqai/shared";
 import { PostgresScrapeQueue } from "./queue.js";

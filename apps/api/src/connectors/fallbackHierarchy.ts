@@ -82,9 +82,16 @@ export class FallbackPlatformConnector implements IPlatformConnector {
 
   getActiveAdapter(): IPlatformConnector {
     switch (this.currentMode) {
+      // "live" is handled first by the platform adapters
+      // (BlinkitAdapter/ZeptoAdapter/etc. call search*Live). This connector
+      // is only the fallback underneath them, so live falls through to the
+      // DB-backed mock here — never silently relabelled as live.
+      case "live":
       case "authorized_api":
       case "partner_feed":
-        return this.authorizedConnector;
+        return this.currentMode === "live"
+          ? this.mockConnector
+          : this.authorizedConnector;
       case "permitted_page":
         return this.playwrightConnector.isEnabled()
           ? this.playwrightConnector
@@ -112,6 +119,16 @@ export class FallbackPlatformConnector implements IPlatformConnector {
    * 5. Links + Checklist (always succeeds with zero API access)
    */
   async searchProducts(query: string, locationKey: string): Promise<PriceObservation[]> {
+    // BUG FIX: "live" had no branch here, so it silently fell through to the
+    // DB mock. Live is handled by the adapters first; reaching here means
+    // live failed/returned nothing, so log it and fall back to mock openly.
+    if (this.currentMode === "live") {
+      console.warn(
+        `[GroqAI Fallback] ${this.platformId} live search reached the fallback connector — returning DB mock, not live data.`
+      );
+      return this.mockConnector.searchProducts(query, locationKey);
+    }
+
     if (this.currentMode === "authorized_api" || this.currentMode === "partner_feed") {
       try {
         return await this.authorizedConnector.searchProducts(query, locationKey);
@@ -149,6 +166,15 @@ export class FallbackPlatformConnector implements IPlatformConnector {
   }
 
   async getPrice(productId: string, locationKey: string): Promise<PriceObservation | null> {
+    // "live" has no single-price live path (adapters refresh via search) —
+    // return the DB listing openly as mock, never as live.
+    if (this.currentMode === "live") {
+      console.warn(
+        `[GroqAI Fallback] ${this.platformId} getPrice in live mode has no live path — returning DB mock.`
+      );
+      return this.mockConnector.getPrice(productId, locationKey);
+    }
+
     if (this.currentMode === "authorized_api" || this.currentMode === "partner_feed") {
       try {
         return await this.authorizedConnector.getPrice(productId, locationKey);

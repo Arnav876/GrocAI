@@ -70,7 +70,12 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
       : process.env.ADMIN_API_KEY || null;
   const registry = new ConnectorRegistry(prisma);
   const catalogJobs = new CatalogBackgroundService(prisma, registry);
-  const syncService = new GrocerySyncService(prisma, registry);
+  // Wire the .env TTLs into the sync service — previously it always used the
+  // shared defaults and PRICE_CACHE_TTL_MS / PRICE_STALE_TTL_MS were ignored.
+  const syncService = new GrocerySyncService(prisma, registry, {
+    cacheTtlMs: parseInt(process.env.PRICE_CACHE_TTL_MS || "3600000", 10),
+    staleTtlMs: parseInt(process.env.PRICE_STALE_TTL_MS || "21600000", 10),
+  });
   const scrapeQueue = new PostgresScrapeQueue(prisma);
   const feeIntelligence = new FeeIntelligenceService(prisma);
   const optimizationService = new OptimizationService(prisma, feeIntelligence);
@@ -716,9 +721,14 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
         Array.isArray(req.body.platforms) && req.body.platforms.length > 0
           ? req.body.platforms
           : ["blinkit", "zepto", "bigbasket"];
+      // BUG FIX: was `delhi_${pincode}` for every pincode, so a 560064 refresh
+      // produced locationKey delhi_560064, which has no Location row — the
+      // worker then fell back to Delhi coordinates (28.6304, 77.2177).
       const locationKey =
         (req.body.locationKey as string) ||
-        (req.body.pincode ? `delhi_${req.body.pincode}` : "delhi_110001");
+        resolveLocationKey(
+          (req.body.pincode as string) || "110001"
+        );
       const priority = Number(req.body.priority || 5);
 
       if (queries.length === 0) {
@@ -1601,7 +1611,9 @@ export function createServer(prisma: PrismaClient, options: ServerOptions = {}) 
     if (!SUPPORTED_PLATFORMS.includes(pid)) {
       return res.status(404).json({ error: `Platform ${req.params.id} not recognized` });
     }
-    const validModes = ["mock", "manual", "partner_feed", "authorized_api", "permitted_page", "links_only"];
+    // BUG FIX: "live" was missing here, so POST /api/admin/platforms/:id/mode
+    // rejected mode=live with 400 even though the adapters support it.
+    const validModes = ["mock", "manual", "partner_feed", "authorized_api", "permitted_page", "links_only", "live"];
     if (!validModes.includes(mode)) {
       return res.status(400).json({ error: `Invalid mode '${mode}'. Expected one of: ${validModes.join(", ")}` });
     }
